@@ -1,0 +1,170 @@
+- First want to find an intersection. While either a/b's end is below the other's start,
+	we skip to its next range. We could use binary search here.
+- For intersections, there are three parts: disjoint at start, intersection middle, and
+	disjoint at end. The disjoint at the end could have another intersection elsewhere;
+	since ranges are normalized, it is guaranteed the disjoint is the min range.
+- Once we've resolved ranges from one of a/b, we end, possibly adding/removing all
+	remaining elements.
+
+Ideally we can handle both in-place and copy versions of the same method. Assuming we do
+in-place modification of a, then probably only a/ab+a/ab are efficient operations, with
+ab+b/b possibly requiring lots of copying of b. I think we can implement copy as an
+extra copy whenever we have an in-place value from a, and then do the in-place operation
+on the copy.
+
+We have lists of a/b ranges and want to get the difference between the two. There are three diff
+types: a+!b ("disjoint a"), a+b (intersection), and !a+b ("disjoint b")
+
+a/b fully disjoint:
+	in-place: insert if b
+	copy: copy and push to array
+
+ab intersect:
+
+How we handle this depends on what we're filtering, and what parts of the intersection match that
+filter. It also depends on if we are merging contiguous ab+a/ab+b/ab+a+b ranges. I will label the
+intersection parts x|y|z, for disjoint start, middle intersection, and disjoint end respectively. We
+may be filtering any of those parts which I'll indicate with hyphen, or by [x/y/z]_f (e.g. these
+parts are not to be included).
+
+All cases:
+Note when we have z_f, we still need to keep it (or at least some info about it) in case of intersection later.
+	a/b/-|ab|a/b
+	x	 If b (and not a disjoint extension) or filtered a at start, a.start = b.start. We
+			could also delete a and replace with b, but then we run into a
+			possible problem with b as the disjoint end (see below). So seems
+			maybe simpler to modify a's start and keep b separate.
+
+	x	If disjoint a at end, we continue as normal
+
+		If disjoint b at end, could intersect with further ranges. The next
+		cases will be either:
+			1) b: a.end extended to b.end
+			2) b|ab|a: a.end extended to next a.end
+			3) b|ab|b: can extend a.end, but reduces to same case again, so could just skip that a and repeat
+		The other case we might want to handle like this is -|ab|b. Cases would
+		be the same there except for #2
+			2) b|ab|-: a.end extended to b.end (reduces to #1 case)
+		
+		>>> So we could extend a.end = b.end,
+		but we'd have to have some self_union logic embedded to merge with 1+ subsequent a's. That
+		would work for this case, but not play nicely if, e.g. we have -|ab|b case. I'm thinking
+		we can have a flag union_with_previous, which is reset on next iter if no intersection; if
+		not reset and we get an intersection, we
+	a|ab|-b
+	x	 copy b and set b.start = a.end (actually needed tough, since not keeping b?)
+	b|ab|-a
+	x	a.start = b.start
+	x	copy a and set a.start = b.end (needed?); this is the disjoint a
+	x	a.end = b.end
+	-|ab|-a/b
+	x	start a: a.start = b.start
+	x	end a: copy a and set start = b.end (think we could just keep a.end though?); intersect a.end = b.end
+	x	end b: copy and set start = a.end
+	a/b|-|a/b
+	x	start+end a: copy a, trim end and insert before;
+	x	start+end b: copy/trim b.end;
+			replace a
+	x	start a + end b: trim a.end
+	x	start b + end a: copy/trim b.end; insert before
+	x	trim disjoint end's start
+	-|-|a/b
+	x	a: trim a.start
+		b: remove a;
+	x		copy and trim b.start
+	a|-|-b
+	x	a.end = b.start
+	x	could update b.start, but wouldn't get used
+	b|-|-a
+	x	copy b, set b.end = a.start; insert
+	x	set a.start = b.end
+
+Summarized rules:
+	- increment a/b, whichever != z
+	- z is always the new minimum for next iteration
+		need to make copy of z if z = b;
+		update z.start if z_f || (z = a and y); set to exclusive y.end (will be opposites a/b)
+		(z_f since its start will never be referenced; could instead exclude start from copy op)
+	- copying a:
+		When merging, there will only ever be one copy made, with the copy only necessary
+		when a = z; so we make z be the copy;
+		These three cases:
+			a|-|-a
+			*|ab|-a
+			a|-|a
+		possible logic: should_copy = a == z && (z_f ? a == x || y : a == x && y_f)
+		Essentially, whenever there is a gap between two a's, where filtering z create a virtual gap
+	- when to update a (in-place):
+		the non-copy is a combination of disjoint start/intersection
+			b/-|ab|* > a/y.start = b.start
+			a|-|* = a/x.end = b.start
+			b|ab|-a = a/y.end = b.end
+	- insert b:
+		when b = x and y_f; set copy b.end = a.start
+	- remove a:
+		when y_f and z != a (previously z = b) and x != a
+	- extend b:
+		when y and z = b, we get the case where b needs to extend a, but also stick around to check
+		for intersections of subsequent a's. We're essentially doing an inline self_union on ranges
+		of a. A couple ways to do that:
+		- set "extending" flag; in next iter(s) if no intersection, old_a.end = b.end; if intersection,
+			(if b = z, delete a and continue; else a = z, set old_a.end = a.end and delete a; else
+			z empty, old_a.end = b/a.end, and delete a)
+		- alternatively inline self_union loop: loop and find first a.end >= b.end,
+			if a.start > b.start, old_a.end = b.end; delete all a's exclusive
+			else, old_a.end = a.end; delete all a's inclusive
+
+	Perform ops in this order:
+	- insert b
+	- remove a, or copy + update a
+	- update z
+	- increment a/b
+
+What about when x/z are empty, how do the rules change?
+	empty z:
+		- increment both a/b, with no known minimum for next iter; automatically handled with:
+			if (a != z) a.inc();
+			if (b != z) b.inc();
+		- will never copy a; automatically handled with example logic
+		- no need to update a/y.end
+		- remove a e.g. change rule to be z != a
+	empty x:
+		- don't copy a if filtering y; automatically handled with example logic
+		- no need to update a/y.start (or a/x.end, since x is empty)
+		- will never insert another b (besides at end)
+		- remove a automatically handled by x != a logic
+
+What if not merging?
+	All the cases with y_f need no special handling, since they aren't getting merged anyways. I'm
+	thinking we could virtually treat it like a y_f case, and then inject y in afterwards.
+
+What if copying?
+	Whenever a is being modified in-place, we instead copy it first and then do the in-place
+	modification on the copy. Remove a ops are ignored
+
+
+I'm thinking we could efficiently implement the case logic using three bitsets: which of x|y|z
+is filtered, a, and b. The absence of either a/b flag can indicate empty x/z; y for a/b will always
+be set, so maybe can exclude that unless it makes masking with `filtered` easier to keep it.
+
+So I started implementing this, and I ran into a little sticky spot. We have all these rules about
+when to copy A, and then how to update A. And it seemed complicated to have to track which position
+the preserved A was in (since it can be in one of x/y/z), and update accordingly. I added small
+logic to track that. With that logic, it actually seemed quite simple to add logic to handle each
+segment (x/y/z) case separately, and just "rebuild" the section completely without trying to reuse
+A. I sort of suspected that could be the case at the very beginning... that rebuilding might just
+end up being easier than trying to reuse the existing A. Implementing the logic for rebuilding
+was quite simple, and turns out it very naturally handles merging; e.g. the same logic we use
+to extend z to the next iteration can be used, with some modification, to extend from one segment
+to the next. Given the cleanliness of that solution, I think I'll just leave it at that, and
+then try and see if we can add a couple special cases for preserving the existing A if it wouldn't
+change. E.g. the following cases:
+	merging && a/empty/-b|ab|a/empty/-b
+		e.g. can't have b/-a on sides
+	!merging && b/-b/empty|ab|b/-b/empty (here may still need to inject start/end b copies)
+		e.g. can't have a/-a on sides; also can't be b if don't want to inject b copies
+So conditions we could detect:
+	- ab not filtered in middle
+	- no filtered a on sides
+	- no unfiltered a/b on sides, which is merging dependent
+

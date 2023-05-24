@@ -1,0 +1,8 @@
+tests/*
+docs/*
+coverage/*
+rollup.config.mjs
+package-lock.json
+babel.config.json
+.gitignore
+.github/*
