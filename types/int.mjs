@@ -12,19 +12,19 @@ const IntType = {
 			b += mode & 0b10 ? -1 : 1;
 		const delta = a-b;
 		// no gap between?
-		if (mode === ComparisonModes.END_START && Math.abs(delta) == 1)
-			return 0;
+		if (mode === ComparisonModes.END_START && delta === -1)
+			return -0;
 		return delta;
 	},
 	*iterate(r, forward){
 		if (forward){
-			let i = r.start + r.startExcl;
+			let i = r.start + !!r.startExcl;
 			const end = r.end + !r.endExcl;
 			for (; i < end; i++)
 				yield i;
 		}
 		else{
-			let i = r.end - r.endExcl;
+			let i = r.end - !!r.endExcl;
 			const end = r.start - !r.startExcl;
 			for (; i > end; i--)
 				yield i;

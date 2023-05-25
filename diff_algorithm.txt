@@ -168,3 +168,26 @@ So conditions we could detect:
 	- no filtered a on sides
 	- no unfiltered a/b on sides, which is merging dependent
 
+Another case that came up while testing is a|empty|b. This only occurs when there is an empty
+gap between a/b, so the two are candidates to be merged, e.g. a:[0,5],b:[6,10] -> [0,10]. Cases:
+	a|empty|b
+		union: set extend to a if not set already; remove a
+		split: range_end(a)
+	b|empty|a
+		union: set extend to b if not set already
+		split: range_end(b)
+	-a|empty|b
+		union/split: remove a
+	b|empty|-a
+		union/split: range_end(b)
+	a|empty|-b
+		union/split: range_end(a)
+	-b|empty|a
+		nothing
+	-a|empty|-b
+		nothing
+	-b|empty|-a
+		nothing
+	
+	For all:
+		increment z like normal, and set it to be the new min

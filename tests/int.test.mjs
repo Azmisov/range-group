@@ -15,8 +15,11 @@ test("IntType iterate", () => {
 			expect(arr.at(-1)).toBe(forward ? end : start);
 		}
 	}
-	const arr = Array.from(IntType.iterate({start:4,end:4,startExcl:true}, true));
+	let arr = Array.from(IntType.iterate({start:4,end:4,startExcl:true}, true));
 	expect(arr).toHaveLength(0);
+	// undefined excl value
+	arr = Array.from(IntType.iterate({start: 0, end: 5}, true));
+	expect(arr).toEqual([0,1,2,3,4,5]);
 });
 test("IntType compare", () => {
 	// normal compare, no exclusion

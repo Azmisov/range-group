@@ -122,8 +122,6 @@ class DiffState{
 		 * @type {?array}
 		 */
 		this.cur = arr[0];
-		// initialize
-		this.inc();
 	}
 	/** Update state to next (or subsequent) value in range array
 	 * @returns {boolean} whether there was another range
@@ -302,17 +300,25 @@ class RangeGroup{
 	 * indicating whether the range group would have been non-empty
 	 */
 	diff(other, {filter=false, track_sources=false, self_union=true, copy=false, bool=false}={}){
-		// for diff algorithm comments and design, see diff_algorithm.txt
+		/* For diff algorithm comments and design, see diff_algorithm.txt. The actual algorithm is
+			not really too complicated, but the logic to handle all the different options ends up
+			making it seem complex. The most tricky parts are copy = false (doing in-place
+			modifications to this.ranges) and self_union = true (merging adjacent ranges as we go)
+		*/
 		// 001 = a, 010 = b, 100 = ab;
-		if (typeof filter !== "number")
-			filter = filter ? (filter.a << 0) | (filter.b << 1) | (filter.ab << 2) : 0b111;
-		if (!(filter & 0b111))
-			throw Error("filter cannot be empty");
+		if (!filter)
+			filter = 0b111;
+		else{
+			if (typeof filter !== "number")
+				filter = (filter.ab << 2) | (filter.b << 1) | filter.a;
+			if (filter & ~0b111)
+				throw Error("filter bits out of range");
+		}
 		if (self_union){
 			track_sources = false;
 			// if (!((filter & 0b100) && (filter & 0b11)))
 			// 	self_union = false;
-		}		
+		}
 
 		const out = copy ? new RangeGroup([], {type:this.type, normalize:false}) : this;
 		const a = new DiffState(this.ranges, "a");
@@ -320,7 +326,6 @@ class RangeGroup{
 		const state = [a,b];
 
 		/* TODO:
-			- end conditions; a/b.cur null
 			- setStart({}) -> replace with type-based creation
 		*/
 
@@ -343,18 +348,22 @@ class RangeGroup{
 		let splice_buffer = null;
 
 		/** Flush the current splice buffer */
-		function flush(){
-			a.idx_delta += splice_buffer.length-2-splice_buffer[1];
+		const flush = () => {
+			const change = splice_buffer.length-2-splice_buffer[1];
+			a.idx += change;
+			a.idx_delta += change; // cumulative delta
 			this.ranges.splice(...splice_buffer);
 			splice_buffer = null;
-		}
-		/** Remove the current a range */
+		};
+		/** Remove the current A range; only remove A when A will get incremented (e.g. to avoid
+		 * double removes, its responsibility of incrementer to remove)
+		 */
 		function remove(){
 			if (copy)
 				return;
 			// in-place removal;
-			// extend current splice operation?
 			if (splice_buffer){
+				// extend current splice operation?
 				if (splice_buffer[0]+splice_buffer[1] === a.idx){
 					splice_buffer[1]++;
 					return;
@@ -372,7 +381,8 @@ class RangeGroup{
 			}
 			// in-place insertion
 			if (splice_buffer){
-				if (splice_buffer[0]+splice_buffer[1] === a.idx){
+				// >=, since we might call remove+add for same index
+				if (splice_buffer[0]+splice_buffer[1] >= a.idx){
 					splice_buffer.push(range);
 					return;
 				}
@@ -380,20 +390,24 @@ class RangeGroup{
 			}
 			splice_buffer = [a.idx, 0, range];
 		}
-		/** Copy the range if needed, and add */
-		function copy_add(state, is_a){
+		/** Copy the range if needed, and add
+		 * @param {number} is_b
+		 */
+		const copy_add = (state, is_b) => {
 			let range = state.cur;
-			const should_copy = copy || !is_a;
-			if (should_copy)
+			if (copy || is_b){
 				range = this.type.copy(range);
+				add(range);
+			}
 			if (track_sources)
 				state.set_source(range);
-			if (should_copy)
-				add(range);
-		}
-		/** Copy a sequence of ranges if needed, and add */
-		function copy_add_many(count, is_b){
-			const src = state[+is_b];
+		};
+		/** Copy a sequence of ranges if needed, and add
+		 * @param {number} count how many to be added
+		 * @param {number} is_b
+		 */
+		const copy_add_many = (count, is_b) => {
+			const src = state[is_b];
 			let target = null;
 			if (copy)
 				target = out.ranges;
@@ -423,46 +437,68 @@ class RangeGroup{
 			}
 			// in-place accept count values of a
 			else src.inc(count);
-		}
-		/** Mark the end of the min range, e.g. no more intersections possible */
-		function range_end(){
-			const end = state[min];
+		};
+		/** Mark the end of the min range, e.g. no more intersections possible
+		 * @param {number} is_b
+		 */
+		function range_end(is_b){
+			const end = state[is_b];
 			// aggregate range, or range with trimmed start
 			if (extend){
 				setEnd(extend, end.cur.end, end.cur.endExcl);
 				if (track_sources)
 					end.set_source(extend);
 				add(extend);
+				// old is replaced by the extend copy
+				if (!is_b)
+					remove();
 			}
 			// unmodified range
 			else{
-				copy_add(end, !min);
+				copy_add(end, is_b);
 			}
 		}
 
 		if (a.cur && b.cur){
+			const merge_empty = self_union && (filter & 0b11) == 0b11;
 			while (true){
 				// see which of a/b comes before
 				if (min === null){
 					start_compare = this._compare(ComparisonModes.START, a.cur, b.cur);
-					min = +(start_compare > 0)
+					min = +(start_compare > 0);
 				}
 				// check for intersection
 				const middle_compare = this._compare(ComparisonModes.END_START, state[min].cur, state[min^1].cur);
-				// no intersection
-				if (middle_compare < 0){
+				const empty = Object.is(middle_compare, -0);
+				// no intersection, possibly with empty gap between the ranges
+				if (middle_compare < 0 || empty){
 					const end = state[min];
-					if ((1 << min) & filter){
+					if (empty && merge_empty){
+						// both a/b unfiltered
 						if (bool)
 							return true;
-						range_end();
+						if (!extend)
+							extend = setStart({}, end.cur.start, end.cur.startExcl);;
+						if (!min)
+							remove();
 					}
+					else if ((1 << min) & filter){
+						if (bool)
+							return true;
+						range_end(min);
+					}
+					else if (!min)
+						remove();
 					if (!end.inc())
 						break;
+					if (empty){
+						start_compare = -start_compare;
+						min ^= 0b1;
+					}
 					// TODO: binary search first that intersects with state[min^1]
-					min = null;
+					else min = null;
 				}
-				// some intersection
+				// some intersection (or empty gap between two ranges)
 				else{
 					/** Catches the conditions where we can simply reuse a for the intersection:
 					 * 		self_union && a/-b/empty|ab|a/-b/empty
@@ -473,11 +509,11 @@ class RangeGroup{
 					*		- no b is included, and additional no a if !self_union
 					* @type {boolean}
 					*/
-					let skip = filter & 0b10;
+					let skip = filter & 0b100;
 					/** Which segments are nonempty and filtered in? Bitset form: 0bzyx
 					 * @type {number}
 					 */
-					const fmask = (filter & 0b100) >> 1;
+					let fmask = (filter & 0b100) >> 1;
 					if (start_compare){
 						// include start?
 						if ((1 << min) & filter){
@@ -512,23 +548,16 @@ class RangeGroup{
 							skip = false;
 					}
 
-					// Catch the case where result is simply a, unmodified
-					if (skip){
-						if (extend)
-							remove();
-						if (!end_compare)
-							range_end();
-					}
-					else{
-						remove();
+					if (!skip){
 						let base;
 						/** Gets start of this segment and write to `base`, where start data could come from
 						 * a previous segment when merging/extending
-						 * @param {number} smask mask for which segment (x/y) this is
+						 * @param {number} bit mask for which segment (x/y) this is
 						 * @returns {boolean} whether segment should be emitted; false could mean we are
 						 * 	merging/extending with the next segment, or this segment is filtered out
 						 */
-						function xy_segment(smask){
+						function xy_segment(bit){
+							const smask = 1 << bit;
 							// this segment is ignored; guaranteed we won't ignore if extend is set
 							if (!(fmask & smask))
 								return false;
@@ -536,7 +565,7 @@ class RangeGroup{
 							base = extend;
 							if (!base){
 								// get x or y's start
-								const start_idx = min;
+								const start_idx = min ^ bit;
 								const start = state[start_idx].cur;
 								base = setStart({}, start.start, start.startExcl);
 								// merge with next segment?
@@ -552,7 +581,7 @@ class RangeGroup{
 						}
 			
 						// x segment (disjoint start)
-						if (xy_segment(0b1)){
+						if (xy_segment(0)){
 							const end = state[min^1].cur;
 							setEnd(base, end.start, !end.startExcl);
 							if (track_sources)
@@ -560,7 +589,7 @@ class RangeGroup{
 							add(base);
 						}
 						// y segment (intersection)
-						if (xy_segment(0b10)){
+						if (xy_segment(1)){
 							const end = state[max^1].cur;
 							setEnd(base, end.end, end.endExcl);
 							if (track_sources){
@@ -577,18 +606,24 @@ class RangeGroup{
 							if (track_sources)
 								state[max].set_source(extend);
 						}
+						if (!end_compare || max)
+							remove();
 					}
+					// Catch the case where result is simply a, unmodified
+					else if (!end_compare)
+						range_end(0);
 					
 					// max becomes min for next iter; increment the other range
 					if (end_compare){
 						if (!state[max^1].inc())
 							break;
-						start_compare = end_compare;
+						start_compare = -end_compare;
 						min = max;
 					}
 					// no z segment (disjoint end); increment both
 					else{
-						if (!a.inc() || !b.inc())
+						const a_end = a.inc();
+						if (!b.inc() || !a_end)
 							break;
 						min = null;
 					}
@@ -597,15 +632,26 @@ class RangeGroup{
 		}
 		// excess remainder
 		handle_excess: if (a.cur || b.cur){
-			const excess = b.cur ? 1 : 0;
-			if (filter & (1 << excess)){
+			min = b.cur ? 1 : 0;
+			if (filter & (1 << min)){
 				if (extend){
-					range_end();
-					if (!state[excess].inc())
+					range_end(min);
+					if (!state[min].inc())
 						break handle_excess;
 				}
+				copy_add_many(Infinity, min);
 			}
-			copy_add_many(Infinity, excess);
+			// remove remaining from a
+			else if (!min && !copy){
+				if (splice_buffer){
+					if (splice_buffer[0]+splice_buffer[1] === a.idx){
+						splice_buffer[1] = Infinity;
+						break handle_excess
+					}
+					flush();
+				}
+				splice_buffer = [a.idx, Infinity];
+			}
 		}
 		if (splice_buffer)
 			flush();
@@ -633,6 +679,7 @@ class RangeGroup{
 	/** Generator for values within the range group
 	 * @param {boolean} forward iterate ranges forward or backward; forward indicates the first
 	 *  value will give a negative comparison against any subsequent values
+	 * @param {...any} args arguments to forward to the type's iterator
 	 * @yields {any} values from the range
 	 */
 	*iterate(forward=true, ...args){
@@ -645,7 +692,6 @@ class RangeGroup{
 		else{
 			i = this.ranges.length - 1;
 			end = inc = -1;
-
 		}
 		for (; i != end; i += inc){
 			const r = this.ranges[i];
