@@ -1,6 +1,6 @@
 import seed from "seed-random";
-import IntType from "../types/int.mjs";
-import { RangeGroup } from "../RangeGroup.mjs";
+import IntType from "../src/types/int.mjs";
+import { RangeGroup } from "../src/RangeGroup.mjs";
 const rand = seed("RangeGroupTests");
 
 function rand_int(min, max){
@@ -10,13 +10,13 @@ function rand_int(min, max){
 
 /** Simple, inefficient baseline implementation that holds exhaustive set */
 class Baseline{
+	/** Create new baseline group
+	 * @param ranges 2d array of arguments for constructing
+	 */
 	constructor(ranges){
 		const s = new Set();
 		for (const r of ranges){
-			const vals = IntType.iterate({
-				start: r[0],
-				end: r[1]
-			});
+			const vals = IntType.iterate(IntType.create(...r));
 			for (const v of vals)
 				s.add(v);
 		}
@@ -32,6 +32,9 @@ class Baseline{
 			for (let i=this.values.length-1; i>=0; --i)
 				yield this.values[i];
 		}
+	}
+	[Symbol.iterator](){
+		return this.iterate();
 	}
 	diff(other, {filter=false, copy=false, bool=false}={}){
 		if (typeof filter !== "number")
@@ -107,8 +110,8 @@ test("self union randomized", () => {
 	const samples = 1000;
 	for (let s=0; s<samples; s++){
 		const [rangegroup, baseline] = rand_args();
-		const a = Array.from((rangegroup).iterate());
-		const b = Array.from((baseline).iterate());
+		const a = Array.from(rangegroup);
+		const b = Array.from(baseline);
 		expect(a).toEqual(b);
 	}
 });
@@ -118,7 +121,7 @@ test("self union cases", () => {
 	// should merge all
 	let r = new RangeGroup([[0,5],[0,0],[0,-2],[0,3],[1,2],[2,5],[5,5],[6,5]], {type:IntType, normalize:true});
 	expect(r.ranges).toHaveLength(1);
-	let r_arr = Array.from(r.iterate(true));
+	let r_arr = Array.from(r);
 	expect(r_arr).toEqual([0,1,2,3,4,5]);
 	// should merge all
 	r = new RangeGroup([[1,4],[5,6],[7,7],[8,10]], {type:IntType, normalize:true});
@@ -129,8 +132,36 @@ test("iterate", () => {
 	const args = [[0,5],[12,16],[19,20]];
 	const r = new RangeGroup(args, {type:IntType});
 	const b = new Baseline(args);
-	expect(Array.from(r.iterate())).toEqual(Array.from(b.iterate()));
+	expect(Array.from(r)).toEqual(Array.from(b));
 	expect(Array.from(r.iterate(false))).toEqual(Array.from(b.iterate(false)));
+});
+
+test("args", () => {
+	// argument types
+	let r1 = new RangeGroup([0,5], {type: IntType});
+	let r2 = new RangeGroup({start:0,end:5}, {type: IntType});
+	let r3 = new RangeGroup([{start:0,end:5}], {type: IntType});
+	let r4 = new RangeGroup([[0,5]], {type: IntType});
+	let b1 = Array.from(new Baseline([[0,5]]).iterate());
+	for (let r of [r1,r2,r3,r4]){
+		expect(Array.from(r)).toEqual(b1);
+	}
+	// bad argument type
+	expect(() => {
+		// won't fail immediately; we don't validate every arg
+		let rbad = new RangeGroup([new Date(), "test", [9]]);
+		rbad.sort();
+	}).toThrow()
+	// diff args
+	expect(() => {
+		r1.diff(r1);
+	}).toThrow(/diff against the same/);
+	expect(() => {
+		r1.diff(r2, {filter:0b1000});
+	}).toThrow(/out of range/)
+	expect(() => {
+		r1.diff(r2, {filter:{ab:100}});
+	}).toThrow(/out of range/)
 });
 
 test("diff randomized", () => {
@@ -141,13 +172,33 @@ test("diff randomized", () => {
 			// console.log("sample:", s);
 			const [Ra, Ba] = rand_args();
 			const [Rb, Bb] = rand_args();
-			Ra.diff(Rb, {filter, copy:false});
-			Ba.diff(Bb, {filter, copy:false});
-			const a = Array.from(Ra.iterate());
-			const b = Array.from(Ba.iterate());
+			const cache = structuredClone(Ra.ranges);
+			const Rcopy = Ra.diff(Rb, {filter, copy:true});
+			// copy shouldn't modify original
+			expect(cache).toEqual(Ra.ranges);
+			const Bcopy = Ba.diff(Bb, {filter, copy:true});
+			const a = Array.from(Rcopy);
+			const b = Array.from(Bcopy);
+			// correct results?
 			expect(a).toEqual(b);
+			// bool should gives results without modifying
+			const res = Ra.diff(Rb, {filter, copy:false, bool:true});
+			expect(res).toEqual(!!Rcopy.ranges.length);
+			// again, shouldn't modify
+			expect(cache).toEqual(Ra.ranges);
+			// in-place should give same results
+			Ra.diff(Rb, {filter, copy:false});
+			const c = Array.from(Ra);
+			expect(c).toEqual(b);
+
 		}
 	}
 });
+
+/* TODO:
+	diff sources
+	diff self_union disabled
+	more rigorously check that bool is not modifying
+*/
 
 //*/

@@ -1,5 +1,5 @@
-import IntType from "../types/int.mjs";
-import { ComparisonModes } from "../RangeGroup.mjs";
+import IntType from "../src/types/int.mjs";
+import { ComparisonModes } from "../src/RangeGroup.mjs";
 
 test("IntType iterate", () => {
 	for (let i=0; i<=3; i++){
