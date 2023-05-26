@@ -1,5 +1,7 @@
-/** Gets next floating point number;
- * https://stackoverflow.com/a/72185420/379572
+/** Gets next floating point number. Using a factory, since it needs to create the typed
+ * arrays, which might not be supported in older browsers.
+ * Minorly adapted from: https://stackoverflow.com/a/72185420/379572
+ * @private
  */ 
 let _cached_next_after = null;
 function createNextAfter(){

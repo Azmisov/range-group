@@ -1,97 +1,13 @@
 import seed from "seed-random";
 import IntType from "../src/types/int.mjs";
 import { RangeGroup } from "../src/RangeGroup.mjs";
+import Baseline from "./Baseline.mjs";
 const rand = seed("RangeGroupTests");
 
 function rand_int(min, max){
 	// generate random integer
 	return Math.floor(rand()*(max-min+1))+min;
 }
-
-/** Simple, inefficient baseline implementation that holds exhaustive set */
-class Baseline{
-	/** Create new baseline group
-	 * @param ranges 2d array of arguments for constructing
-	 */
-	constructor(ranges){
-		const s = new Set();
-		for (const r of ranges){
-			const vals = IntType.iterate(IntType.create(...r));
-			for (const v of vals)
-				s.add(v);
-		}
-		this.values = Array.from(s);
-		this.values.sort((a,b) => a-b);
-	}
-	*iterate(forward=true){
-		if (forward){
-			for (const v of this.values)
-				yield v;
-		}
-		else{
-			for (let i=this.values.length-1; i>=0; --i)
-				yield this.values[i];
-		}
-	}
-	[Symbol.iterator](){
-		return this.iterate();
-	}
-	diff(other, {filter=false, copy=false, bool=false}={}){
-		if (typeof filter !== "number")
-			filter = filter ? (filter.a << 0) | (filter.b << 1) | (filter.ab << 2) : 0b111;
-
-		this._split_length = 0;
-		this._union_length = 0;
-		let prev_type = 0;
-		const out = [];
-		const emit = (val, type) => {
-			if (filter & type){
-				if (bool) return true;
-				out.push(val);
-				if (out.at(-1)+1 !== val){
-					this._split_length++;
-					this._union_length++;
-				}
-				else if (type !== prev_type)
-					this._split_length++;
-			}
-			prev_type = type;
-		};
-
-		let i=0, j=0;
-		while (i < this.values.length || j < other.values.length){
-			const a = this.values[i] ?? Infinity;
-			const b = other.values[j] ?? Infinity;
-			if (a < b){
-				if (emit(a, 0b1))
-					return true;
-				i++;
-			}
-			else if (a > b){
-				if (emit(b, 0b10))
-					return true;
-				j++;
-			}
-			else{
-				if (emit(a, 0b100))
-					return true;
-				i++; j++;
-			}
-		}
-		if (bool)
-			return false;
-		if (copy){
-			const b = new Baseline([]);
-			b.values = out;
-			return b;
-		}
-		this.values = out;
-		return this;
-	}
-
-}
-
-//*
 
 function rand_args(){
 	const ranges = 5;
@@ -195,10 +111,75 @@ test("diff randomized", () => {
 	}
 });
 
+// Preset case
+function setup_case(){
+	return [
+		new RangeGroup([[0,10],[20,30]], {type:IntType}),
+		new RangeGroup([[6,12],[17,24]], {type:IntType})
+	];
+}
+function set_operation(method, copyMethod, boolMethod, result){
+	const [a,b] = setup_case();
+	const cache = structuredClone(a.ranges);
+	// these methods should not mutate
+	const c = a[copyMethod](b);
+	expect(a.ranges).toEqual(cache);
+	expect(c.ranges).toEqual(result);
+	if (boolMethod){
+		const d = a[boolMethod](b);
+		expect(a.ranges).toEqual(cache);
+		expect(d).toBe(!!result.length);
+	}
+	// this can mutate
+	a[method](b);
+	expect(a.ranges).toEqual(result);
+}
+test("union", set_operation.bind(null,
+	"union","toUnioned","hasUnion",
+	[{start:0,end:12},{start:17,end:30}]
+));
+test("intersect", set_operation.bind(null,
+	"intersect","toIntersected","hasIntersection",
+	[{start:6,end:10},{start:20,end:24}]
+));
+test("difference", set_operation.bind(null,
+	"difference","toDifferenced","hasDifference",
+	[{start:0,end:6,endExcl:true},{start:24,startExcl:true,end:30}]
+));
+test("symmetric difference", set_operation.bind(null,
+	"symmetricDifference","toSymmetricDifferenced","hasSymmetricDifference",
+	[
+		{start:0,end:6,endExcl:true},{start:10,startExcl:true,end:12},
+		{start:17,end:20,endExcl:true},{start:24,startExcl:true,end:30}
+	]
+));
+test("symmetric difference extra", () => {
+	// doesn't use diff, so needs extra tests
+	const a = new RangeGroup([0,5], {type:IntType});
+	const b = new RangeGroup([0,10], {type:IntType});
+	const c = new RangeGroup([[0,5],[7,12]], {type:IntType});
+	const d = new RangeGroup([[0,5]], {type:IntType});
+	expect(a.hasSymmetricDifference(a)).toBe(false);
+	expect(a.hasSymmetricDifference(c)).toBe(true);
+	expect(a.hasSymmetricDifference(b)).toBe(true);
+	expect(a.hasSymmetricDifference(d)).toBe(false);
+});
+test("clear", set_operation.bind(null, "clear", "toCleared", null, []));
+test("empty", () => {
+	const a = new RangeGroup([[0,5]], {type:IntType});
+	expect(a.isEmpty()).toBe(false);
+	const b = new RangeGroup([[0,-5]], {type:IntType});
+	expect(b.isEmpty()).toBe(false);
+	expect(b.normalize().isEmpty()).toBe(true);
+	expect(a.clear().isEmpty()).toBe(true);
+	const c = new RangeGroup([], {type: IntType});
+	expect(c.isEmpty()).toBe(true);
+});
+
 /* TODO:
+	check that Range is never modified in diff randomized
 	diff sources
 	diff self_union disabled
 	more rigorously check that bool is not modifying
+	all the missing methods
 */
-
-//*/

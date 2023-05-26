@@ -1,22 +1,41 @@
 // This file mainly just holds range interface definition
 
-/**
- * @typedef {object} Range
- * @property {any} start start of range
- * @property {any} end end of range
- * @property {?boolean} startExcl whether the start is exclusive; if falsey or not present, it
- * 	defaults to inclusive
- * @property {?boolean} endExcl whether the end is exclusive; if falsey or not present, it defaults
- * 	to inclusive
- * @property {?number} a Indicates the index from {@link RangeGroup#ranges}, for which this range
- * 	was sourced from during a boolean set operation. This is set from {@link RangeGroup#diff} if
- * 	the `track_sources` option is enabled. A value of `null` indicates the range was not present
- * 	in group `a`.
- * @property {?number} b Indicates the index from {@link RangeGroup#ranges}, for which this range
- * 	was sourced from during a boolean set operation. This is set from {@link RangeGroup#diff} if
- * 	the `track_sources` option is enabled. A value of `null` indicates the range was not present
- * 	in group `b`.
+/** Interface that all Range objects must implement
+ * @interface Range
  */
+/**
+ * Start of range
+ * @name Range#start
+ * @type {any}
+ */
+/**
+ * End of range
+ * @name Range#end
+ * @type {any}
+ */
+/**
+ * Whether {@link Range#start} is exclusive; if falsey or not present, it defaults to inclusive
+ * @name Range#startExcl
+ * @type {?boolean}
+ */
+/**
+ * Whether {@link Range#end} is exclusive; if falsey or not present, it defaults to inclusive
+ * @name Range#endExcl
+ * @type {?boolean}
+ */
+/** Indicates the index into {@link RangeGroup#ranges}, for which this range was sourced from during
+ * a boolean set operation. This is set from {@link RangeGroup#diff} if the `track_sources` option
+ * is enabled. A value of `null` indicates the range was not present in group `a`.
+ * @name Range#a
+ * @type {?number} 
+ */
+/** Indicates the index into {@link RangeGroup#ranges}, for which this range was sourced from during
+ * a boolean set operation. This is set from {@link RangeGroup#diff} if the `track_sources` option
+ * is enabled. A value of `null` indicates the range was not present in group `b`.
+ * @name Range#b
+ * @type {?number} 
+ */
+
 
 /**
  * Range interface for use with {@link RangeGroup}
@@ -27,28 +46,42 @@
  * @function
  * @static
  * @name RangeType.compare
+ * @param {ComparisonModes} mode What combination of range starts/ends is being compared. You will
+ *  likely need to handle exclusive/inclusive differently for range starts vs ends. Secondly,
+ *  {@link ComparisonModes.END_START} mode allows you to specify whether two adjacent, but
+ *  non-intersecting ranges can be merged by returning `-0`.
  * @param {any} a Range start/end to compare with
  * @param {any} b Range start/end to compare with
- * @param {ComparisonModes} mode what kind of combination of start/end is being compared
- * @returns {number} -1 if a comes before b, 1 if a comes after b, or 0 if they are equal; for
- * 	`END_START` comparisons you may return 0 if there is no gap between the two ranges
+ * @returns {number} One of the following:
+ * - negative number if `a` comes before `b`
+ * - positive number if `a` comes after `b`
+ * - `+0` if `a` and `b` have the same position
+ * - For {@link ComparisonModes.END_START}, you may return `-0` (negative zero) if `a` comes before `b`,
+ * 	 but there are no values between them. This indicates that the two ranges are adjacent and
+ *   can be merged. For example, with integer ranges, you might return `-0` for
+ *   `compare(ComparisonModes.END_START, 5, 6)`.
  */
 /**
  * Iterate all values inside the range
  * @function
  * @name RangeType#iterate
- * @param {...any} args arguments to customize iteration
- * @returns {iterable} can return a generator, or some other iterable that can be used in a for loop
+ * @param {...any} args Arbitrary arguments used to customize the iteration
+ * @returns {iterable} Can return a generator, or some other object implementing the iterable
+ * 	interface. This is called by {@link RangeGroup#iterate}
  */
 
-/** Set range start */
+/** Set range start
+ * @private
+ */
 export function setStart(obj, value, excl){
 	obj.start = value;
 	if (excl)
 		obj.startExcl = excl;
 	return obj;
 }
-/** Set range end */
+/** Set range end
+ * @private
+ */
 export function setEnd(obj, value, excl){
 	obj.end = value;
 	if (excl)

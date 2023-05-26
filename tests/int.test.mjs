@@ -27,8 +27,8 @@ test("IntType compare", () => {
 		const m = ComparisonModes[k];
 		if (m == ComparisonModes.END_START)
 			continue;
-		expect(IntType.compare(-12,-11, false, false, m)).toBeLessThan(0);
-		expect(IntType.compare(5,5, false, false, m)).toBe(0);
-		expect(IntType.compare(5,4, false, false, m)).toBeGreaterThan(0);
+		expect(IntType.compare(m, -12, -11, false, false)).toBeLessThan(0);
+		expect(IntType.compare(m, 5, 5, false, false)).toBe(0);
+		expect(IntType.compare(m, 5, 4, false, false)).toBeGreaterThan(0);
 	}
 });

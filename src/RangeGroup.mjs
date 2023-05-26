@@ -1,7 +1,8 @@
 import { setStart, setEnd } from "./Range.mjs";
 
-/** Comparison modes for two ranges. The enumeration is setup as a bitset, so you
- * can identify which of a/b is start/end:
+/** Comparison modes for two ranges. When comparing two ranges, you can compare any combination of
+ * range starts and ends. The enumeration is setup as a bitset, so you can identify which of a/b is
+ * start/end:
  * 
  * - bits 0 (LSb) and 1 indicate `a` and `b` respectively
  * - a value of `0` or `1` indicates `start` or `end` of range respectively
@@ -73,7 +74,7 @@ class DiffState{
 }
 
 /** A {@link RangeGroup} holds a list of contiguous ranges, allowing you to perform efficient
- * set operations on them. Create a new RangeGroup like so:
+ * set operations on them. Create a new `RangeGroup` like so:
  * 
  * ```js
  * // Supply a preconstructed Range object
@@ -89,6 +90,14 @@ class DiffState{
  * new RangeGroup([new Date(),5])
  * new RangeGroup([["array","arg"],5])
  * ```
+ * 
+ * A `RangeGroup` must be in *normalized* form before you perform any operations on it. This means
+ * its list of ranges are sorted ({@link RangeGroup#sort}) and non-intersecting
+ * ({@link RangeGroup#selfUnion}). To make it normalized, call {@link RangeGroup#normalize}, or pass
+ * `normalize=true` option for your newly constructed `RangeGroup`. For efficiency, this is not done
+ * automatically, as typical inputs are already "pre-normalized". Whenever you modify
+ * {@link RangeGroup#ranges} manually, you need to make sure you normalize again (if needed) before
+ * calling other methods.
  */
 class RangeGroup{
 	/** Default type to be used if none is provided in the constructor of {@link RangeGroup}
@@ -99,7 +108,7 @@ class RangeGroup{
 	static default_type;
 
 	/**
-	 * @typedef {object} RangeGroupoOptions
+	 * @typedef {object} RangeGroup~CreateOptions
 	 * @property {?RangeType} type Range type to be used with this group; if null, it uses
 	 * 	{@link RangeGroup.default_type}
 	 * @property {boolean} normalize whether to call {@link RangeGroup#normalize} after construction
@@ -113,7 +122,7 @@ class RangeGroup{
 	 * For convenience, you can also pass just a single preconstructed range. You can pass a single
  	 * array of arguments to construct a range as well, but only if the first argument is not an
  	 * object (via `typeof`).
-	 * @param {RangeGroupoOptions} options Options for creation
+	 * @param {?RangeGroup~CreateOptions} options Options for creation
 	 */
 	constructor(ranges, {type=null, normalize=false}={}){
 		/** Range type to use for this group
@@ -155,14 +164,14 @@ class RangeGroup{
 	#compare(mode, a, b){
 		switch (mode){
 			case ComparisonModes.START:
-				return this.type.compare(a.start, b.start, a.startExcl, b.startExcl, mode);
+				return this.type.compare(mode, a.start, b.start, a.startExcl, b.startExcl);
 			case ComparisonModes.END:
-				return this.type.compare(a.end, b.end, a.endExcl, b.endExcl, mode);
+				return this.type.compare(mode, a.end, b.end, a.endExcl, b.endExcl);
 			// b optional here
 			case ComparisonModes.START_END:
-				return this.type.compare(a.start, a.end, a.startExcl, a.endExcl, mode);
+				return this.type.compare(mode, a.start, a.end, a.startExcl, a.endExcl);
 			default:
-				return this.type.compare(a.end, b.start, a.endExcl, b.startExcl, mode);
+				return this.type.compare(mode, a.end, b.start, a.endExcl, b.startExcl);
 		}
 	}
 
@@ -176,7 +185,7 @@ class RangeGroup{
 		return deep ? this.ranges.map(this.type.copy) : Array.from(this.ranges);
 	}
 	/** Puts the range group into a normalized form, where ranges are sorted and self intersections
-	 * have been removed. This makes use of {@link RangeGroup#sort} and {@link RangeGroup#self_union}
+	 * have been removed. This makes use of {@link RangeGroup#sort} and {@link RangeGroup#selfUnion}
 	 * @returns {RangeGroup} modified `this`
 	 */
 	normalize(){
@@ -239,7 +248,7 @@ class RangeGroup{
 	}
 
 	/** Options for calculating diff between two range groups
-	 * @typedef {object} DiffOptions
+	 * @typedef {object} RangeGroup~DiffOptions
 	 * @property {object<string, boolean> | number | false} [filter=false] Specifies what diff
 	 *  operations you want to include in the results. Indicate which parts, `a`, `b`, or `ab` to
 	 *  include using an object of boolean flags, e.g. `{ab:true, b:true}`. Alternatively, specify a
@@ -280,7 +289,7 @@ class RangeGroup{
 	 * diffing.
 	 * 
 	 * @param {RangeGroup} other The group to diff against; this should not equal `this`
-	 * @param {DiffOptions} options Options to customize the diff behavior
+	 * @param {?RangeGroup~DiffOptions} options Options to customize the diff behavior
 	 * @returns {RangeGroup | boolean} Contains the diff result range group, which may equal
 	 * `this` if `copy` was false. If `bool` was true, a boolean value is instead returned
 	 * indicating whether that range group would have been non-empty.
@@ -291,9 +300,6 @@ class RangeGroup{
 			making it seem complex. The most tricky parts are copy = false (doing in-place
 			modifications to this.ranges) and self_union = true (merging adjacent ranges as we go)
 		*/
-		// will cause problems if !copy; just disallow this
-		if (this.ranges === other.ranges)
-			throw Error("diff against the same RangeGroup");
 		// 001 = a, 010 = b, 100 = ab;
 		if (!filter)
 			filter = 0b111;
@@ -302,6 +308,22 @@ class RangeGroup{
 				filter = (filter.ab << 2) | (filter.b << 1) | filter.a;
 			if (filter & ~0b111)
 				throw Error("filter bits out of range");
+		}
+		// can cause problems with !copy logic; can just optimize this case;
+		// a/b will be empty, only ab will be present
+		if (this.ranges === other.ranges){
+			const ab = !!(filter & 0b100);
+			if (bool)
+				return ab;
+			if (ab){
+				const o = copy ? this.copy(true) : this;
+				if (track_sources){
+					for (let i=0; i<o.length; i++)
+						o.a = o.b = i;
+				}
+				return o;
+			}
+			return copy ? this.toCleared() : this.clear();
 		}
 		if (self_union){
 			track_sources = false;
@@ -768,6 +790,7 @@ class RangeGroup{
 		// can do an optimized version here pretty easily
 		const ar = this.ranges;
 		const or = other.ranges;
+		// we allow this here, since it will get used with isEqual
 		if (ar === or)
 			return false;
 		if (ar.length !== or.length)
@@ -775,7 +798,7 @@ class RangeGroup{
 		for (let i=0; i<ar.length; i++){
 			const a = ar[i];
 			const b = or[i];
-			if (this._compare(ComparisonModes.START, a, b) || this._compare(ComparisonModes.END, a, b))
+			if (this.#compare(ComparisonModes.START, a, b) || this.#compare(ComparisonModes.END, a, b))
 				return true;
 		}
 		return false;
@@ -832,6 +855,96 @@ class RangeGroup{
 		return other.isProperSubset(this);
 	}
 
+	/** Get the total number of elements held by this group. This dynamically sums up the size of
+	 * each range in the group, so it is not a constant-time operation. To see how many contiguous
+	 * ranges there are, just get the length of {@link RangeGroup#ranges}.
+	 * @returns {number}
+	 */
+	size(){
+		let s = 0;
+		for (const r of this.ranges)
+			s += this.type.size(r);
+		return s;
+	}
+
+	/** Output of {@link RangeGroup#search}
+	 * @typedef {object} RangeGroup~SearchResult
+	 * @prop {number} index The lower bound index where `element` could be inserted
+	 * @prop {boolean} has Whether the range at `index` contains the element already
+	 */
+
+	/** Find the position in {@link RangeGroup#ranges} where `element` could be inserted to
+	 * maintain a sorted array. If the element belongs to a range already, then the index to
+	 * that range would be returned, with `has` flag set. The index represents the lower bound
+	 * position for element, or the last
+	 * 
+	 * Search for first array index whose value is >= val, or rbound+1 if val is > all values in search bounds.
+	 * This does a binary search, but using date math to search faster. Assumes dates are unique in arr,
+	 * and that arr is sorted ascending.
+	 * 
+	 * Want to get the index of the range that contains the element. If no range contains it,
+	 * give the first range
+	 * 
+	 * @param {any} element the element to search for
+	 * @param {number} first Inclusive lower bound into {@link RangeGroup#ranges} for the search. If
+	 *  less than zero, zero is used.
+	 * @param {number} last Inclusive upper bound into {@link RangeGroup#ranges} for the search. A
+	 *  negative value counts from the end, e.g. `-1` is equivalent to `this.ranges.length-1`. If
+	 *  beyond the end of the array, the last index of the array is used.
+	 * @returns {RangeGroup~SearchResult}
+	 */
+	search(element, first=0, last=-1){
+		const l = this.ranges.length;
+		// fix bounds
+		if (first < 0)
+			first = 0;
+		if (last < 0)
+			last = l+last;
+		else if (last >= l)
+			last = l-1;
+
+		// interpolation search
+		let fel = this.ranges[first];
+		let lel = this.ranges[last];
+		while (first < last){
+			// estimated index where a match would be found
+			const t = this.type.interpolate(element, fel.start, lel.end, fel.startExcl, lel.endExcl);
+			const middle = first + Math.ceil(t*(last-first));
+			const mel = this.ranges[middle];
+			// check relative position
+			const start_compare = this.#compare(ComparisonModes.START, mel.start, element, mel.startExcl);
+			// range below or intersecting element
+			if (start_compare < 0){
+				const end_compare = this.#compare(ComparisonModes.END, mel.end, element, mel.endExcl);
+				// range below element
+				if (end_compare > 0){
+					first = middle+1;
+					fel = this.ranges[first];
+					continue;
+				}
+			}
+			// range above element
+			else if (start_compare > 0){
+				last = middle-1;
+				lel = this.ranges[last];
+				continue;
+			}
+			// intersection
+			return {index:middle, has:true};
+		}
+		return {index:last+1, has:false};
+	}
+	/** Test whether an element is contained in this group. This uses {@link RangeGroup#search}
+	 * internally, returning {@link RangeGroup~SearchResult#has}.
+	 * @param {any} element the element to search for
+	 * @param {number} first lower bound into {@link RangeGroup#ranges} for the search
+	 * @param {number} last upper bound into {@link RangeGroup#ranges} for the search; a negative
+	 * 	value counts from the end, e.g. `-1` is equivalent to `this.ranges.length-1`
+	 * @returns {boolean}
+	 */
+	has(element, first=0, last=-1){
+		return this.search(element, first, last).has;
+	}
 
 	/** Generator for values within the range group
 	 * @param {boolean} forward iterate ranges forward or backward; forward indicates the first
@@ -862,10 +975,46 @@ class RangeGroup{
 		return this.iterate();
 	}
 }
-// Method aliases ------------
-RangeGroup.add = RangeGroup.union;
-RangeGroup.delete = RangeGroup.subtract = RangeGroup.difference;
-RangeGroup.isStrictSubset = RangeGroup.isProperSubset;
-RangeGroup.isStrictSuperset = RangeGroup.isProperSuperset;
+// Method aliases -------------------------------------
+const aliases = {
+	add: "union",
+	subtract: "difference",
+	delete: "difference",
+	isStrictSubset: "isProperSubset",
+	isStrictSuperset: "isProperSuperset",
+	cardinality: "size",
+	contains: "has",
+};
+for (const alias in aliases)
+	RangeGroup.prototype[alias] = RangeGroup.prototype[aliases[alias]];
+
+/** An alias for {@link RangeGroup#union}
+ * @name RangeGroup#add
+ * @function 
+ */
+/** An alias for {@link RangeGroup#difference}
+ * @name RangeGroup#delete
+ * @function 
+ */
+/** An alias for {@link RangeGroup#difference}
+ * @name RangeGroup#subtract
+ * @function 
+ */
+/** An alias for {@link RangeGroup#isProperSubset}
+ * @name RangeGroup#isStrictSubset
+ * @function 
+ */
+/** An alias for {@link RangeGroup#isProperSuperset}
+ * @name RangeGroup#isStrictSuperset
+ * @function 
+ */
+/** An alias for {@link RangeGroup#size}
+ * @name RangeGroup#cardinality
+ * @function 
+ */
+/** An alias for {@link RangeGroup#has}
+ * @name RangeGroup#contains
+ * @function
+ */
 
 export { RangeGroup, ComparisonModes };
