@@ -15,6 +15,10 @@ on the copy.
 We have lists of a/b ranges and want to get the difference between the two. There are three diff
 types: a+!b ("disjoint a"), a+b (intersection), and !a+b ("disjoint b")
 
+I previously thought that merging ranges would not apply in the case of only filtering for
+disjoint a + disjoint b. But you can actually merge those two if they line up exactly, and the
+compare function says it is okay to merge them.
+
 a/b fully disjoint:
 	in-place: insert if b
 	copy: copy and push to array
@@ -191,3 +195,5 @@ gap between a/b, so the two are candidates to be merged, e.g. a:[0,5],b:[6,10] -
 	
 	For all:
 		increment z like normal, and set it to be the new min
+
+	

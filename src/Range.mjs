@@ -77,6 +77,7 @@ export function setStart(obj, value, excl){
 	obj.start = value;
 	if (excl)
 		obj.startExcl = excl;
+	else delete obj.startExcl;
 	return obj;
 }
 /** Set range end
@@ -86,5 +87,6 @@ export function setEnd(obj, value, excl){
 	obj.end = value;
 	if (excl)
 		obj.endExcl = excl;
+	else delete obj.endExcl;
 	return obj;
 }

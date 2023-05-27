@@ -36,13 +36,8 @@ const ComparisonModes = {
 class DiffState{
 	/** Create new state object
 	 * @param {array} arr initial value for {@link DiffState#arr}
-	 * @param {string} label initial value for {@link DiffState#label}
 	 */
-	constructor(arr, label){
-		/** Label for when tracking origin indexes (e.g. "a" or "b")
-		 * @type {string}
-		 */
-		this.label = label;
+	constructor(arr){
 		/** Ranges array from {@link RangeGroup#ranges}
 		 * @type {array}
 		 */
@@ -68,8 +63,8 @@ class DiffState{
 		return this.cur !== undefined;
 	}
 	/** Set range source index to be that of `cur` */
-	set_source(obj){
-		obj[this.label] = this.idx + this.idx_delta;
+	get_source(){
+		return this.idx - this.idx_delta;
 	}
 }
 
@@ -107,7 +102,7 @@ class RangeGroup{
 	 */
 	static default_type;
 
-	/**
+	/** Options to pass to the constructor of {@link RangeGroup}
 	 * @typedef {object} RangeGroup~CreateOptions
 	 * @property {?RangeType} type Range type to be used with this group; if null, it uses
 	 * 	{@link RangeGroup.default_type}
@@ -175,21 +170,20 @@ class RangeGroup{
 		}
 	}
 
-	/** Make a copy of this range group
-	 * @param {boolean} [deep=true] Whether to make copies of the individual {@link Range}'s as
-	 *  well. The set operations and {@link RangeGroup#diff} treat individual {@link Range}'s as
-	 *  immutable, so its safe to reuse the objects unless you are modifying them manually.
+	/** Make a deep copy of this range group. This calls {@link RangeType#copy} internally
 	 * @returns {RangeGroup}
 	 */
-	copy(deep=true){
-		return deep ? this.ranges.map(this.type.copy) : Array.from(this.ranges);
+	copy(){
+		const c = new RangeGroup([], {type:this.type});
+		c.ranges = this.ranges.map(this.type.copy);
+		return c;
 	}
 	/** Puts the range group into a normalized form, where ranges are sorted and self intersections
-	 * have been removed. This makes use of {@link RangeGroup#sort} and {@link RangeGroup#selfUnion}
+	 * have been removed. This calls {@link RangeGroup#sort} and {@link RangeGroup#selfUnion}
 	 * @returns {RangeGroup} modified `this`
 	 */
 	normalize(){
-		return this.selfUnion(true);
+		return this.sort().selfUnion();
 	}
 	/** Performs an in-place sort of ranges in the group. Ranges are ordered by their start
 	 * @returns {RangeGroup} modified `this`
@@ -204,13 +198,9 @@ class RangeGroup{
 
 	/** Union of individual ranges within this range group (e.g. remove self-intersections). This
 	 * will remove empty ranges, where the start is after (and not equal) the end.
-	 * @param {boolean} sort whether to call {@link RangeGroup#sort} first; if `false`, the
-	 * 	group *MUST* be sorted prior, or this operation will have undefined behavior
 	 * @returns {RangeGroup} modified `this`
 	 */
-	selfUnion(sort=false){
-		if (sort)
-			this.sort();
+	selfUnion(){
 		// find first where start <= end
 		let i = 0;
 		for (; i<this.ranges.length; i++){
@@ -218,36 +208,50 @@ class RangeGroup{
 			if (this.#compare(ComparisonModes.START_END, cur) <= 0)
 				break;
 		}
-		if (i)
-			this.ranges = this.ranges.slice(i);
+		if (i){
+			// TODO: use slice if this.ranges.length-i < i
+			this.ranges.splice(0, i);
+		}
 		if (!this.ranges.length)
 			return this;
 		// we have a valid range to start building from
 		let cur = this.ranges[0];
-		for (i = 1; i < this.ranges.length;){
+		// splice arguments, to reduce calls to splice
+		let splice_buffer = null;
+		for (i = 1; i < this.ranges.length; i++){
 			// TODO: could possibly have a "min/max" value in addition to comparator; if cur[1]
 			//	equals that maximum, we can discard the remaining ranges
 			const nxt = this.ranges[i];
-			// end < start; discard this range
-			if (this.#compare(ComparisonModes.START_END, nxt) > 0)
-				this.ranges.splice(i,1);
-			// can combine ranges
-			else if (this.#compare(ComparisonModes.END_START, cur, nxt) >= 0){
-				// take the greater end
-				if (this.#compare(ComparisonModes.END, cur, nxt) < 0)
-					cur.end = nxt.end;
-				this.ranges.splice(i,1);
+			// if end < start, discard the empty range
+			if (this.#compare(ComparisonModes.START_END, nxt) <= 0){	
+				// can combine ranges
+				if (this.#compare(ComparisonModes.END_START, cur, nxt) >= 0){
+					// take the greater end
+					if (this.#compare(ComparisonModes.END, cur, nxt) < 0)
+						setEnd(cur, nxt.end, nxt.endExcl);
+				}
+				// keep ranges separate
+				else{
+					if (splice_buffer){
+						i -= splice_buffer[1];
+						this.ranges.splice(...splice_buffer);
+						splice_buffer = null;
+					}
+					cur = nxt;
+					continue;
+				}
 			}
-			// keep ranges separate
-			else{
-				i++;
-				cur = nxt;
-			}
+			// buffer deletions
+			if (splice_buffer)
+				splice_buffer[1]++;
+			else splice_buffer = [i,1];
 		}
+		if (splice_buffer)
+			this.ranges.splice(...splice_buffer);
 		return this;
 	}
 
-	/** Options for calculating diff between two range groups
+	/** Options for calculating diff between two range groups. For use with {@link RangeGroup#diff}
 	 * @typedef {object} RangeGroup~DiffOptions
 	 * @property {object<string, boolean> | number | false} [filter=false] Specifies what diff
 	 *  operations you want to include in the results. Indicate which parts, `a`, `b`, or `ab` to
@@ -288,7 +292,7 @@ class RangeGroup{
 	 * The range group **must** be in normalized form (see {@link RangeGroup#normalize}) prior to
 	 * diffing.
 	 * 
-	 * @param {RangeGroup} other The group to diff against; this should not equal `this`
+	 * @param {RangeGroup} other The group to diff against
 	 * @param {?RangeGroup~DiffOptions} options Options to customize the diff behavior
 	 * @returns {RangeGroup | boolean} Contains the diff result range group, which may equal
 	 * `this` if `copy` was false. If `bool` was true, a boolean value is instead returned
@@ -297,8 +301,8 @@ class RangeGroup{
 	diff(other, {filter=false, bool=false, copy=false, track_sources=false, self_union=true}={}){
 		/* For diff algorithm comments and design, see diff_algorithm.txt. The actual algorithm is
 			not really too complicated, but the logic to handle all the different options ends up
-			making it seem complex. The most tricky parts are copy = false (doing in-place
-			modifications to this.ranges) and self_union = true (merging adjacent ranges as we go)
+			making it so. The most tricky parts are copy = false (doing in-place modifications to
+			this.ranges) and self_union = true (merging adjacent ranges as we go)
 		*/
 		// 001 = a, 010 = b, 100 = ab;
 		if (!filter)
@@ -309,36 +313,35 @@ class RangeGroup{
 			if (filter & ~0b111)
 				throw Error("filter bits out of range");
 		}
-		// can cause problems with !copy logic; can just optimize this case;
-		// a/b will be empty, only ab will be present
+		// uncommon case, but can cause problems with !copy logic since it assumes a/b are different
+		// arrays; can just optimize this case; a/b will be empty, only ab will be present
 		if (this.ranges === other.ranges){
 			const ab = !!(filter & 0b100);
 			if (bool)
 				return ab;
 			if (ab){
-				const o = copy ? this.copy(true) : this;
+				const out = copy ? this.copy(true) : this;
 				if (track_sources){
-					for (let i=0; i<o.length; i++)
-						o.a = o.b = i;
+					for (let i=0; i<out.ranges.length; i++){
+						const r = out.ranges[i];
+						r.a = r.b = i;
+					}
 				}
-				return o;
+				return out;
 			}
 			return copy ? this.toCleared() : this.clear();
 		}
-		if (self_union){
+		if (self_union)
 			track_sources = false;
-			// if (!((filter & 0b100) && (filter & 0b11)))
-			// 	self_union = false;
-		}
 
+		// iterator for a/b's ranges
 		const out = copy && !bool ? new RangeGroup([], {type:this.type, normalize:false}) : this;
-		const a = new DiffState(this.ranges, "a");
-		const b = new DiffState(other.ranges, "b");
+		const a = new DiffState(this.ranges);
+		const b = new DiffState(other.ranges);
+		/** Used to implement logic independent of a/b, where we can fetch one or the other with an
+		 * integer: is_b and is_b^1
+		 */
 		const state = [a,b];
-
-		/* TODO:
-			- setStart({}) -> replace with type-based creation
-		*/
 
 		/** Indicates partial range that we are building/extending/merging
 		 * @type {?{start, startExcl, a, b}}
@@ -402,16 +405,16 @@ class RangeGroup{
 			splice_buffer = [a.idx, 0, range];
 		}
 		/** Copy the range if needed, and add
-		 * @param {number} is_b
+		 * @param {number} mask first bit used as `is_b` boolean; otherwise mask forwarded to set_sources
 		 */
-		const copy_add = (state, is_b) => {
+		const copy_add = (state, mask) => {
 			let range = state.cur;
-			if (copy || is_b){
+			if (copy || mask & 0b1){
 				range = this.type.copy(range);
 				add(range);
 			}
 			if (track_sources)
-				state.set_source(range);
+				set_sources(range, mask);
 		};
 		/** Copy a sequence of ranges if needed, and add
 		 * @param {number} count how many to be added
@@ -443,22 +446,23 @@ class RangeGroup{
 						target.push(o);
 					}
 					if (track_sources)
-						src.set_source(o);
+						set_sources(o, is_b);
 				} while (src.inc() && --count);
 			}
 			// in-place accept count values of a
 			else src.inc(count);
 		};
 		/** Mark the end of the min range, e.g. no more intersections possible
-		 * @param {number} is_b
+		 * @param {number} mask first bit used as `is_b` boolean; otherwise mask forwarded to set_sources
 		 */
-		function range_end(is_b){
+		function range_end(mask){
+			const is_b = mask & 0b1
 			const end = state[is_b];
 			// aggregate range, or range with trimmed start
 			if (extend){
 				setEnd(extend, end.cur.end, end.cur.endExcl);
 				if (track_sources)
-					end.set_source(extend);
+					set_sources(extend, mask);
 				add(extend);
 				// old is replaced by the extend copy
 				if (!is_b)
@@ -466,11 +470,31 @@ class RangeGroup{
 			}
 			// unmodified range
 			else{
-				copy_add(end, is_b);
+				copy_add(end, mask);
+			}
+		}
+		/** Labels for setting sources */
+		const labels = "ab";
+		/** Set sources for a range
+		 * @param {Range} range
+		 * @param {number} mask 0/1 to set a/b respectively, with the other as null; 2 to set 
+		 * 	both a and b
+		 */
+		function set_sources(range, mask){
+			if (mask === 2){
+				range.a = a.get_source();
+				range.b = b.get_source();
+			}
+			else{
+				range[labels.charAt(mask)] = state[mask].get_source();
+				range[labels.charAt(mask^1)] = null;
 			}
 		}
 
 		if (a.cur && b.cur){
+			/** Whether to merge adjacent ranges with zero gap between them
+			 * @type {boolean}
+			 */
 			const merge_empty = self_union && (filter & 0b11) == 0b11;
 			while (true){
 				// see which of a/b comes before
@@ -484,12 +508,13 @@ class RangeGroup{
 				// no intersection, possibly with empty gap between the ranges
 				if (middle_compare < 0 || empty){
 					const end = state[min];
+					// merge adjacent ranges with no gap
 					if (empty && merge_empty){
 						// both a/b unfiltered
 						if (bool)
 							return true;
 						if (!extend)
-							extend = setStart({}, end.cur.start, end.cur.startExcl);;
+							extend = setStart({}, end.cur.start, end.cur.startExcl);
 						if (!min)
 							remove();
 					}
@@ -498,7 +523,7 @@ class RangeGroup{
 							return true;
 						range_end(min);
 					}
-					else if (!min)
+					else if (!bool && !min)
 						remove();
 					if (!end.inc())
 						break;
@@ -524,10 +549,15 @@ class RangeGroup{
 					/** Which segments are nonempty and filtered in? Bitset form: 0bzyx
 					 * @type {number}
 					 */
-					let fmask = (filter & 0b100) >> 1;
+					let fmask = skip >> 1;
+					if (bool && fmask)
+						return true;
+
 					if (start_compare){
 						// include start?
 						if ((1 << min) & filter){
+							if (bool)
+								return true;
 							fmask |= 0b1;
 							if (!self_union || min)
 								skip = false;
@@ -535,8 +565,6 @@ class RangeGroup{
 						else if (!min)
 							skip = false;
 					}
-					if (bool && fmask)
-						return true;
 
 					/** Comparison between a/b range ends
 					 * @type {number}
@@ -549,9 +577,9 @@ class RangeGroup{
 					if (end_compare){
 						// include end?
 						if ((1 << max) & filter){
-							fmask |= 0b100;
 							if (bool)
-								return true;
+								return true
+							fmask |= 0b100;
 							if (!self_union || max)
 								skip = false;
 						}
@@ -560,69 +588,72 @@ class RangeGroup{
 					}
 
 					if (!skip){
-						let base;
-						/** Gets start of this segment and write to `base`, where start data could come from
-						 * a previous segment when merging/extending
-						 * @param {number} bit mask for which segment (x/y) this is
-						 * @returns {boolean} whether segment should be emitted; false could mean we are
-						 * 	merging/extending with the next segment, or this segment is filtered out
-						 */
-						function xy_segment(bit){
-							const smask = 1 << bit;
-							// this segment is ignored; guaranteed we won't ignore if extend is set
-							if (!(fmask & smask))
-								return false;
-							const filter_next = fmask & (smask << 1);
-							base = extend;
-							if (!base){
-								// get x or y's start
-								const start_idx = min ^ bit;
-								const start = state[start_idx].cur;
-								base = setStart({}, start.start, start.startExcl);
-								// merge with next segment?
-								if (filter_next && self_union){
-									extend = base;
+						if (fmask){
+							let base;
+							/** Gets start of this segment and write to `base`, where start data could come from
+							 * a previous segment when merging/extending
+							 * @param {number} bit mask for which segment (x/y) this is
+							 * @returns {boolean} whether segment should be emitted; false could mean we are
+							 * 	merging/extending with the next segment, or this segment is filtered out
+							 */
+							function xy_segment(bit){
+								const smask = 1 << bit;
+								// this segment is ignored; guaranteed we won't ignore if extend is set
+								if (!(fmask & smask))
 									return false;
+								const merge_next = self_union && fmask & (smask << 1);
+								base = extend;
+								if (!base){
+									// get x or y's start
+									const start_idx = min ^ bit;
+									const start = state[start_idx].cur;
+									base = setStart({}, start.start, start.startExcl);
+									// merge with next segment?
+									if (merge_next){
+										extend = base;
+										return false;
+									}
 								}
+								// merging with previous segment; also merge with next segment?
+								else if (merge_next)
+									return false;
+								return true;
 							}
-							// merging with previous segment
-							else if (filter_next)
-								return false;
-							return true;
-						}
-			
-						// x segment (disjoint start)
-						if (xy_segment(0)){
-							const end = state[min^1].cur;
-							setEnd(base, end.start, !end.startExcl);
-							if (track_sources)
-								state[min].set_source(base);
-							add(base);
-						}
-						// y segment (intersection)
-						if (xy_segment(1)){
-							const end = state[max^1].cur;
-							setEnd(base, end.end, end.endExcl);
-							if (track_sources){
-								a.set_source(base);
-								b.set_source(base);
+				
+							// x segment (disjoint start)
+							if (xy_segment(0)){
+								const end = state[min^1].cur;
+								setEnd(base, end.start, !end.startExcl);
+								if (track_sources)
+									set_sources(base, min);
+								add(base);
 							}
-							add(base);
+							// y segment (intersection)
+							if (xy_segment(1)){
+								const end = state[max^1].cur;
+								setEnd(base, end.end, end.endExcl);
+								if (track_sources)
+									set_sources(base, 2);
+								add(base);
+							}
+							// z segment (disjoint end)
+							// we never emit here, since its possible there's intersections with subsequent ranges
+							if (fmask & 0b100 && !extend){
+								const start = state[max^1].cur;
+								extend = setStart({}, start.end, !start.endExcl);
+								if (track_sources)
+									set_sources(extend, max);
+							}
 						}
-						// z segment (disjoint end)
-						// we never emit here, since its possible there's intersections with subsequent ranges
-						if (fmask & 0b100 && !extend){
-							const start = state[max^1].cur;
-							extend = setStart({}, start.end, !start.endExcl);
-							if (track_sources)
-								state[max].set_source(extend);
-						}
-						if (!end_compare || max)
+						if (!bool && (!end_compare || max))
 							remove();
 					}
 					// Catch the case where result is simply a, unmodified
-					else if (end_compare <= 0)
-						range_end(0);
+					else if (end_compare <= 0){
+						// bit zero used for is_b; otherwise, passed to set_sources
+						// track_sources needs to set a source for both a and b
+						range_end(self_union ? 0 : 2);
+					}
 					
 					// max becomes min for next iter; increment the other range
 					if (end_compare){
@@ -779,7 +810,7 @@ class RangeGroup{
 	 * @returns {boolean}
 	 */
 	hasDifference(other){
-		return this.diff(other, {fitler:0b1, bool:true});
+		return this.diff(other, {filter:0b1, bool:true});
 	}
 	/** Check if `this` has values not present in `other`: `a - b`. This uses
 	 * {@link RangeGroup#diff} internally
@@ -869,22 +900,15 @@ class RangeGroup{
 
 	/** Output of {@link RangeGroup#search}
 	 * @typedef {object} RangeGroup~SearchResult
-	 * @prop {number} index The lower bound index where `element` could be inserted
+	 * @prop {number} index Lower bound index; the position where `element` could be inserted to
+	 * 	keep ranges sorted, or the range that contains `element`
 	 * @prop {boolean} has Whether the range at `index` contains the element already
 	 */
 
 	/** Find the position in {@link RangeGroup#ranges} where `element` could be inserted to
 	 * maintain a sorted array. If the element belongs to a range already, then the index to
-	 * that range would be returned, with `has` flag set. The index represents the lower bound
-	 * position for element, or the last
-	 * 
-	 * Search for first array index whose value is >= val, or rbound+1 if val is > all values in search bounds.
-	 * This does a binary search, but using date math to search faster. Assumes dates are unique in arr,
-	 * and that arr is sorted ascending.
-	 * 
-	 * Want to get the index of the range that contains the element. If no range contains it,
-	 * give the first range
-	 * 
+	 * that range would be returned, with `has` flag set. In other words, the index is the *lower
+	 * bound*: the first position that does not come before `element`.
 	 * @param {any} element the element to search for
 	 * @param {number} first Inclusive lower bound into {@link RangeGroup#ranges} for the search. If
 	 *  less than zero, zero is used.
@@ -894,45 +918,73 @@ class RangeGroup{
 	 * @returns {RangeGroup~SearchResult}
 	 */
 	search(element, first=0, last=-1){
-		const l = this.ranges.length;
 		// fix bounds
+		const l = this.ranges.length;
 		if (first < 0)
 			first = 0;
 		if (last < 0)
-			last = l+last;
+			last = Math.max(-1,l+last);
 		else if (last >= l)
-			last = l-1;
+			last = l-1;		
+		if (first > last)
+			return {index:last+1, has:false};
 
-		// interpolation search
 		let fel = this.ranges[first];
 		let lel = this.ranges[last];
-		while (first < last){
-			// estimated index where a match would be found
-			const t = this.type.interpolate(element, fel.start, lel.end, fel.startExcl, lel.endExcl);
-			const middle = first + Math.ceil(t*(last-first));
+
+		// at start of each loop iter, element needs to be inside [first.start, last.end]
+		let t = this.type.interpolate(element, fel.start, lel.end, fel.startExcl, lel.endExcl);
+		if (t < 0)
+			return {index:first, has:false};
+		if (t > 1)
+			return {index:last+1, has:false};
+
+		while (true) {
+			// make range exclusive: (first.start, last.end)
+			if (first === last || t === 0)
+				return {index: first, has:true};
+			if (t === 1)
+				return {index: last, has:true};
+
+			/* Get estimated index where a match would be found. We are using interpolation search,
+				but it reduces to binary search if `interpolate` always returns 0.5. We are dealing
+				with ranges not single points, so it is slightly different. Assume evenly
+				distributed ranges, meaning gaps are always the same.
+				- zero gap: floor(t*(last-first+1)) will be inside the correct range
+				- maximal gap (reducing to single points): round(t*(last-first)) gives the closest
+				Floor will be accurate for zero gap + 50% of maximal gap, so let's go with that
+			*/
+			const middle = first + Math.floor(t*(last-first)+t);
+			// console.log(first, middle, last, t);
 			const mel = this.ranges[middle];
-			// check relative position
-			const start_compare = this.#compare(ComparisonModes.START, mel.start, element, mel.startExcl);
-			// range below or intersecting element
+
+			// TODO: middle == first or last
+			const start_compare = this.type.compare(ComparisonModes.START, mel.start, element, mel.startExcl);
+			// inside (middle.start, last.end)
 			if (start_compare < 0){
-				const end_compare = this.#compare(ComparisonModes.END, mel.end, element, mel.endExcl);
-				// range below element
-				if (end_compare > 0){
+				const end_compare = this.type.compare(ComparisonModes.END, mel.end, element, mel.endExcl);
+				// inside (middle.end, last.end)
+				if (end_compare < 0){
 					first = middle+1;
 					fel = this.ranges[first];
+					t = this.type.interpolate(element, fel.start, lel.end, fel.startExcl, lel.endExcl);
+					if (t < 0)
+						return {index:first, has:false};
 					continue;
 				}
 			}
-			// range above element
+			// inside (first.start, middle.start)
 			else if (start_compare > 0){
 				last = middle-1;
 				lel = this.ranges[last];
+				t = this.type.interpolate(element, fel.start, lel.end, fel.startExcl, lel.endExcl);
+				if (t > 1)
+					return {index:last+1, has:false};
 				continue;
 			}
-			// intersection
+			// inside [middle.start, middle.end]
 			return {index:middle, has:true};
 		}
-		return {index:last+1, has:false};
 	}
 	/** Test whether an element is contained in this group. This uses {@link RangeGroup#search}
 	 * internally, returning {@link RangeGroup~SearchResult#has}.
@@ -946,7 +998,7 @@ class RangeGroup{
 		return this.search(element, first, last).has;
 	}
 
-	/** Generator for values within the range group
+	/** Generator for values within the range group. This calls {@link RangeType#iterate} internally
 	 * @param {boolean} forward iterate ranges forward or backward; forward indicates the first
 	 *  value will give a negative comparison against any subsequent values
 	 * @param {...any} args arguments to forward to the type's iterator
@@ -968,7 +1020,10 @@ class RangeGroup{
 			yield* this.type.iterate(r, forward, ...args);
 		}
 	}
-	/** Iterator interface
+	/** Iterator interface, allowing use with things like for-of loops or `Array.from`. To
+	 * customize how the values are iterated, pass arguments to {@link RangeGroup#iterate} instead.
+	 * @function
+	 * @name RangeGroup#@@iterator
 	 * @see RangeGroup#iterate
 	 */
 	[Symbol.iterator](){

@@ -32,20 +32,20 @@ export default class Baseline{
 		if (typeof filter !== "number")
 			filter = filter ? (filter.a << 0) | (filter.b << 1) | (filter.ab << 2) : 0b111;
 
-		this._split_length = 0;
-		this._union_length = 0;
+		let _split_length = 0;
+		let _union_length = 0;
 		let prev_type = 0;
 		const out = [];
 		const emit = (val, type) => {
 			if (filter & type){
 				if (bool) return true;
-				out.push(val);
 				if (out.at(-1)+1 !== val){
-					this._split_length++;
-					this._union_length++;
+					_split_length++;
+					_union_length++;
 				}
 				else if (type !== prev_type)
-					this._split_length++;
+					_split_length++;
+				out.push(val);
 			}
 			prev_type = type;
 		};
@@ -72,12 +72,11 @@ export default class Baseline{
 		}
 		if (bool)
 			return false;
-		if (copy){
-			const b = new Baseline([]);
-			b.values = out;
-			return b;
-		}
-		this.values = out;
-		return this;
+		let group = copy ? new Baseline([]) : this;
+		group.values = out;
+		group._split_length = _split_length;
+		group._union_length = _union_length;
+		return group;
 	}
+	size(){ return this.values.length; }
 }
