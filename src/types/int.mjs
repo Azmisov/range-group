@@ -22,6 +22,7 @@ const IntType = {
 		if (r.endExcl) s--;
 		return s;
 	},
+	/*
 	compare(mode, a, b, aExcl, bExcl){
 		if (aExcl)
 			a += mode & 0b1 ? -1 : 1;
@@ -38,6 +39,7 @@ const IntType = {
 		if (endExcl) end--;
 		return (el-start)/(end-start);
 	},
+	*/
 	*iterate(r, forward){
 		if (forward){
 			let i = r.start + !!r.startExcl;
@@ -51,6 +53,17 @@ const IntType = {
 			for (; i > end; i--)
 				yield i;
 		}
+	},
+	// new unified compare + interpolate method
+	compare(mode, a, b, aExcl, bExcl){
+		if (aExcl)
+			a += 1 - ((mode & 0b1) << 1);
+		if (bExcl)
+			b += 1 - (mode & 0b10);
+		let distance = a-b;
+		const side = Math.sign(distance);
+		distance -= side;
+		return {distance, side};
 	}
 };
 

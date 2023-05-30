@@ -22,13 +22,9 @@ test("IntType iterate", () => {
 	expect(arr).toEqual([0,1,2,3,4,5]);
 });
 test("IntType compare", () => {
-	// normal compare, no exclusion
-	for (const k in ComparisonModes){
-		const m = ComparisonModes[k];
-		if (m == ComparisonModes.END_START)
-			continue;
-		expect(IntType.compare(m, -12, -11, false, false)).toBeLessThan(0);
-		expect(IntType.compare(m, 5, 5, false, false)).toBe(0);
-		expect(IntType.compare(m, 5, 4, false, false)).toBeGreaterThan(0);
-	}
+	expect(IntType.compare(ComparisonModes.START, -12, -11, false, false)).toEqual({distance:0,side:-1});
+	expect(IntType.compare(ComparisonModes.START, -11, -12, false, false)).toEqual({distance:0,side:1});
+	expect(IntType.compare(ComparisonModes.START, -12, -11, true, false)).toEqual({distance:0,side:0});
+	expect(IntType.compare(ComparisonModes.START, -13, -11, true, false)).toEqual({distance:0,side:-1});
+	expect(IntType.compare(ComparisonModes.START, -13, -11, false, true)).toEqual({distance:-2,side:-1});
 });

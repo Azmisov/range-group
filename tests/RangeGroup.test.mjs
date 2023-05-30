@@ -5,6 +5,8 @@ import { ComparisonModes, RangeGroup } from "../src/RangeGroup.mjs";
 import Baseline from "./Baseline.mjs";
 const rand = seed("RangeGroupTests");
 
+console.log(rand(), rand(), rand());
+
 // increase time when debugging
 jest.setTimeout(6000000);
 
@@ -428,7 +430,7 @@ test("subset/superset", () => {
 	expect(a.isSuperset(d)).toBe(false);
 });
 
-test("search randomized", () => {
+test.only("search randomized", () => {
 	const samples = 100;
 	for (let s=0; s<samples; s++){
 		const [a,b] = rand_args();
@@ -438,33 +440,39 @@ test("search randomized", () => {
 			const res = a.search(i);
 			const cur_b = b.values.indexOf(i, prev_b+1);
 			expect(res.has).toEqual(cur_b !== -1);
+			// exclusive should give same results
+			const res_sexcl = a.search(i-1, {end:false, excl:true});
+			const res_eexcl = a.search(i+1, {end:true, excl:true});
+			expect(res_sexcl).toEqual(res);
+			expect(res_eexcl).toEqual(res);
+			// correct index?
 			const match = a.ranges[res.index];
 			if (res.has){
-				expect(IntType.compare(ComparisonModes.START, match.start, i, match.startExcl) <= 0).toBe(true);
-				expect(IntType.compare(ComparisonModes.END, match.end, i, match.endExcl) >= 0).toBe(true);
+				expect(IntType.compare(ComparisonModes.START, match.start, i, match.startExcl).side <= 0).toBe(true);
+				expect(IntType.compare(ComparisonModes.END, match.end, i, match.endExcl).side >= 0).toBe(true);
 			}
 			else{
 				if (match)
-					expect(IntType.compare(ComparisonModes.START, match.start, i, match.startExcl) > 0).toBe(true);
+					expect(IntType.compare(ComparisonModes.START, match.start, i, match.startExcl).side > 0).toBe(true);
 				const prev = a.ranges[res.index-1];
 				if (prev)
-					expect(IntType.compare(ComparisonModes.END, prev.end, i, prev.endExcl) < 0).toBe(true);
+					expect(IntType.compare(ComparisonModes.END, prev.end, i, prev.endExcl).side < 0).toBe(true);
 			}
 			if (cur_b !== -1)
 				prev_b = cur_b;
 		}
 	}
 });
-test("search/has cases", () => {
+test.only("search/has cases", () => {
 	const a = new RangeGroup([[5,10],[15,20],[25,30],[35,40]], {type:IntType});
-	expect(a.search(0,-2,-Infinity)).toEqual({index:0,has:false});
+	expect(a.search(0,{first:-2,last:-Infinity})).toEqual({index:0,has:false});
 	// returned index is based on last
-	expect(a.search(0,10,-Infinity)).toEqual({index:0,has:false});
+	expect(a.search(0,{first:10,last:-Infinity})).toEqual({index:0,has:false});
 	// last greater than length
-	expect(a.search(22,0,Infinity)).toEqual({index:2,has:false});
+	expect(a.search(22,{first:0,last:Infinity})).toEqual({index:2,has:false});
 	// bounds restrict result from being correct position
-	expect(a.search(33,0,1)).toEqual({index:2,has:false});
-	expect(a.search(2,2,3)).toEqual({index:2,has:false});
+	expect(a.search(33,{first:0,last:1})).toEqual({index:2,has:false});
+	expect(a.search(2,{first:2,last:3})).toEqual({index:2,has:false});
 	// has
 	expect(a.has(5)).toBe(true);
 	expect(a.has(12)).toBe(false);

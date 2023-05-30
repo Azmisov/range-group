@@ -196,4 +196,87 @@ gap between a/b, so the two are candidates to be merged, e.g. a:[0,5],b:[6,10] -
 	For all:
 		increment z like normal, and set it to be the new min
 
-	
+
+Adding binary search
+====================
+
+We have two groups, take the shorter of the two (S) and do a binary search into the longer (L) to
+figure out which ranges from L can be skipped as non-intersecting. The search method I've
+implemented outputs the first range (or end, e.g. L.length) >= value. So, say O is the search output:
+If O.has:
+	O.start <= value <= O.end
+Else:
+	[O-1].end < value < O.start
+If we search by S.start, we get:
+	- O.has: intersection with O
+	- !O.has: possible intersection with O and O+n; no intersection with ranges O-n;
+		possible to merge with O-1 if no gap
+If we search by S.end, we get:
+	- O.has: intersection with O
+	- !O.has: possible intersection with O-n; no intersection with ranges O and O+n;
+		possible to merge with O if no gap
+Obviously searching by S.start is the choice here, since we want to resolve the diff from start to
+end, not in reverse. What about when we have exclusive start?
+	- O.has: intersection with O, or possible merge if merging zero gap is enabled
+	- !O.has: same, but not a zero gap with O-1 is not possible, so wouldn't ever merge
+
+So summarized, the procedure should be:
+- identify S/L; O = L.search(S.cur.start, L.cur.index, -1)
+	if (!has){
+		// check for possible merge with O.index-1:
+		if (merge_empty && O.index != L.cur.index)
+			// identify if merge via comparison
+			prev = L[O.index-1]
+			if (compare(END_START, prev, S))
+				// handle merge
+		// otherwise
+		min = S, or possibly equal S/O if S is exclusive
+		// continue to check ends
+	}
+	else{
+		min = O, or possible equal S/O if S is not exclusive
+		// continue to check ends
+	}
+
+Adding exclusive calculation to interpolate?
+- Exclusive start; 0->0+epsilon (possibly going outside range), 1->1+epsilon (going outside range)
+- Exclusive end; same as start, but opposite
+Hmmm, seems like the only way for this to work is if you pass in exclusiveness parameter and
+client takes care of the calculation. Wonder if its worth it though. The trouble is that with
+exclusivity, you can have (approaches zero from infinity), (approaches zero from -infinity) and zero
+itself, when taking the distance between two values. Javascript gives you -0 and +0, but no way
+to signify unsigned zero I guess. Assume equal, a.compare(b):
+  ( a ,  b )
+- excl, excl: 0
+- incl, excl: +0
+- excl, incl: -0
+- incl, incl: 0
+!aExcl - !bExcl
+
+Exclusion on integers:
+	delta = a-b
+	start:
+		- same, no change
+		- aexcl: +1
+		- bexcl: -1
+	end:
+		- same no change
+		- aexcl: -1
+		- bexcl: +1
+	start_end:
+		- incl/incl: no change
+		- excl/excl: +2
+		- excl/incl: +1
+		- incl/excl: +1
+	end_start:
+		- incl/incl: no change
+		- excl/excl: -2
+		- excl/incl: -1
+		- incl/excl: -1
+
+Need to be able to sort by start/end:
+	[4,-] comes before [7,-] with two values in between
+	[4,-] comes before (6,-) with two values in between
+	[4,-] comes before [5,-] with zero values in between
+	[5,-] comes before (5,-), with zero values in between
+	[6,-] equals (5,-), with zero values in between
