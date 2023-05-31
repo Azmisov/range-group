@@ -105,9 +105,10 @@ class RangeGroup{
 
 	/** Options to pass to the constructor of {@link RangeGroup}
 	 * @typedef {object} RangeGroup~CreateOptions
-	 * @property {?RangeType} type Range type to be used with this group; if null, it uses
+	 * @property {?RangeType} [type=null] Range type to be used with this group; if null, it uses
 	 * 	{@link RangeGroup.default_type}
-	 * @property {boolean} normalize whether to call {@link RangeGroup#normalize} after construction
+	 * @property {boolean} [normalize=false] whether to call {@link RangeGroup#normalize} after
+	 * 	construction
 	 */
 
 	/** Create a new RangeGroup
@@ -274,9 +275,8 @@ class RangeGroup{
 	 *  like union or intersection.
 	 * @property {boolean} [self_union=true] Merges adjacent ranges, in the same manner as
 	 *  {@link RangeGroup#selfUnion}, but using an inline calculation. Use this if you don't care
-	 * 	about tracking the specific diff sources/operations, and just want to get the result of the
-	 * 	set operationon output if needed. Merging will only occur if filtering by ab+a, ab+b, or
-	 *  ab+a+b. The `track_sources` option is disabled if this is true.
+	 *  about tracking the specific diff sources/operations, and just want to get the result of the
+	 *  set operationon output. The `track_sources` option is disabled if this is true.
 	 */
 
 	/** Compute the differences between this and another {@link RangeGroup}. For diff results,
@@ -310,7 +310,8 @@ class RangeGroup{
 		/* For diff algorithm comments and design, see diff_algorithm.txt. The actual algorithm is
 			not really too complicated, but the logic to handle all the different options ends up
 			making it so. The most tricky parts are copy = false (doing in-place modifications to
-			this.ranges) and self_union = true (merging adjacent ranges as we go)
+			this.ranges) and self_union = true (merging adjacent ranges as we go). Integrating
+			binary/interpolation search also ends up making it more complicated.
 		*/
 		// 001 = a, 010 = b, 100 = ab;
 		if (!filter)
@@ -377,22 +378,22 @@ class RangeGroup{
 			this.ranges.splice(...splice_buffer);
 			splice_buffer = null;
 		};
-		/** Remove the current A range; only remove A when A will get incremented (e.g. to avoid
+		/** Remove `count` ranges from A; only remove A when A will get incremented (e.g. to avoid
 		 * double removes, its responsibility of incrementer to remove)
 		 */
-		function remove(){
+		function remove(count=1){
 			if (copy)
 				return;
 			// in-place removal;
 			if (splice_buffer){
 				// extend current splice operation?
 				if (splice_buffer[0]+splice_buffer[1] === a.idx){
-					splice_buffer[1]++;
+					splice_buffer[1] += count;
 					return;
 				}
 				flush();
 			}
-			splice_buffer = [a.idx, 1];
+			splice_buffer = [a.idx, count];
 		}
 		/** Add a newly created range */
 		function add(range){
@@ -427,6 +428,7 @@ class RangeGroup{
 		/** Copy a sequence of ranges if needed, and add
 		 * @param {number} count how many to be added
 		 * @param {number} is_b
+		 * @returns {boolean} whether sequence has any more ranges left
 		 */
 		const copy_add_many = (count, is_b) => {
 			const src = state[is_b];
@@ -455,10 +457,13 @@ class RangeGroup{
 					}
 					if (track_sources)
 						set_sources(o, is_b);
-				} while (src.inc() && --count);
+					if (!src.inc())
+						return false;
+				} while (--count);
+				return true;
 			}
 			// in-place accept count values of a
-			else src.inc(count);
+			return src.inc(count);
 		};
 		/** Mark the end of the min range, e.g. no more intersections possible
 		 * @param {number} mask first bit used as `is_b` boolean; otherwise mask forwarded to set_sources
@@ -505,92 +510,102 @@ class RangeGroup{
 			 */
 			const merge_empty = self_union && (filter & 0b11) == 0b11;
 			while (true){
-				let known_intersection = false;
-				// see which of a/b comes before
-				find_min: if (min === null){
-					/*
-					// TODO: if max remaining is small, as determined by benchmarks, skip the binary search
-					const short = +(b.remaining() < a.remaining());
-					const s = state[short];
-					const l = state[short^1];
-					const o = l.group.search(s.cur.start, l.idx);
+				no_intersection: {
+					/** Whether there's an empty gap between ranges
+					 * @type {boolean}
+					 */
+					let empty;
+					check_intersection: {
+						// see which of a/b comes before
+						if (min === null){
+							const remaining = [a.remaining(), b.remaining()];
+							const long = +(remaining[1] >= remaining[0]);
+							// interpolation/binary search
+							// TODO: tune this parameter
+							if (remaining[long] > 0){
+								const l = state[long];
+								const s = state[long^1];
+								const o = l.group.search(s.cur.start, {excl:s.cur.startExcl, first:l.idx});
 
-					if (o.has){
-						if (o.index != l.idx)
-							copy_add_many(o.index-l.idx);
-						// o.start < s.start; o.end < s.start also possible, so need to check range end
-						if (s.cur.startExcl){
-							start_compare = short ? -1 : 1;
-							min = short^1;
-							break find_min;
-						}
-						// otherwise guaranteed intersection, with o.start <= s.start
-						known_intersection = true;
-					}
-					else{
-						// [o-1].end < s.start; possible merge with adjacent
-						if (merge_empty && o.index != l.idx){
-							const p = l.group.ranges[o.index-1];
-							const middle_compare = this.#compare(ComparisonModes.END_START, p, s.cur);
-							const empty = Object.is(middle_compare, -0);
-							if (!empty){
-								
+								empty = merge_empty && !o.has && o.end && !o.end.distance;
+								const trim_up_to = o.index - empty;
+								if (trim_up_to != l.idx){
+									// will break if o.start is null, e.g. no possible intersections
+									const count = trim_up_to-l.idx;
+									let remaining;
+									// add non-intersecting ranges
+									if ((1 << long) & filter){
+										if (bool)
+											return true;
+										remaining = copy_add_many(count, long);
+									}
+									// discard non-intersecting ranges
+									else{
+										if (!bool && !long)
+											remove(count);
+										remaining = l.inc(count);
+									}
+									if (!remaining)
+										break;
+								}
+
+								// merge with previous due to empty gap
+								if (empty){
+									min = long;
+									start_compare = min ? -1 : 1;
+									break check_intersection;
+								}
+
+								start_compare = o.start.side;
+								// if search element was from b, reverse the comparison so its in reference to a
+								if (!long)
+									start_compare = -start_compare;
+								min = Math.max(0,start_compare);
+								// check for intersection still needed if range start didn't intersect itself
+								if (o.has)
+									break no_intersection;
 							}
-
-							
-
+							// linear search
+							else{
+								start_compare = this.#compare(ComparisonModes.START, a.cur, b.cur).side;
+								min = Math.max(0,start_compare);
+								if (!start_compare)
+									break no_intersection;
+							}
 						}
-						// possible intersection, but unknown; need to check range end
-						// o.start > s.start
-						if (!s.cur.startExcl){
-							start_compare = short ? 1 : -1;
-							min = short;
-							break find_min;
-						}
-						// otherwise o.start >= s.start
-						const n = l.group.ranges[o.index];
-						// TODO: compare s.cur to n
+						// check for intersection
+						const middle_compare = this.#compare(ComparisonModes.END_START, state[min].cur, state[min^1].cur);
+						if (middle_compare.side >= 0)
+							break no_intersection;
+						empty = !middle_compare.distance;
 					}
-					*/
-					
-
-					start_compare = this.#compare(ComparisonModes.START, a.cur, b.cur).side;
-					min = +(start_compare > 0);
-				}
-
-				// check for intersection
-				if (start_compare && !known_intersection){
-					const middle_compare = this.#compare(ComparisonModes.END_START, state[min].cur, state[min^1].cur);
-					// no intersection, possibly with empty gap between the ranges
-					if (middle_compare.side < 0){
-						const empty = !middle_compare.distance;
-						const end = state[min];
-						// merge adjacent ranges with no gap
-						if (empty && merge_empty){
-							// both a/b unfiltered
-							if (bool)
-								return true;
-							if (!extend)
-								extend = setStart({}, end.cur.start, end.cur.startExcl);
-							if (!min)
-								remove();
-						}
-						else if ((1 << min) & filter){
-							if (bool)
-								return true;
-							range_end(min);
-						}
-						else if (!bool && !min)
+					// no intersection, possibly with empty gap between the ranges					
+					const end = state[min];
+					// merge adjacent ranges with no gap
+					if (empty && merge_empty){
+						// both a/b unfiltered
+						if (bool)
+							return true;
+						if (!extend)
+							extend = setStart({}, end.cur.start, end.cur.startExcl);
+						if (!min)
 							remove();
-						if (!end.inc())
-							break;
-						if (empty){
-							start_compare = -start_compare;
-							min ^= 0b1;
-						}
-						else min = null;
-						continue;
 					}
+					else if ((1 << min) & filter){
+						if (bool)
+							return true;
+						range_end(min);
+					}
+					else if (!bool && !min)
+						remove();
+					if (!end.inc())
+						break;
+					if (empty){
+						start_compare = -start_compare;
+						min ^= 0b1;
+					}
+					else min = null;
+					continue;
 				}
 
 				// Intersection
@@ -631,7 +646,7 @@ class RangeGroup{
 				/** 0/1 index into `state`, indicating whether a/b has the maximum end (equal end = a)
 				 * @type {number}
 				 */
-				const max = +(end_compare < 0);
+				const max = Math.max(0,-end_compare);
 				if (end_compare){
 					// include end?
 					if ((1 << max) & filter){
@@ -744,22 +759,205 @@ class RangeGroup{
 				copy_add_many(Infinity, min);
 			}
 			// remove remaining from a
-			else if (!min && !copy){
-				if (splice_buffer){
-					if (splice_buffer[0]+splice_buffer[1] === a.idx){
-						splice_buffer[1] = Infinity;
-						break handle_excess
-					}
-					flush();
-				}
-				splice_buffer = [a.idx, Infinity];
-			}
+			else if (!min)
+				remove(Infinity);
 		}
 		if (bool)
 			return false;
 		if (splice_buffer)
 			flush();
 		return out;
+	}
+
+
+	/** Options to customize search in {@link RangeGroup#search}
+	 * @typedef {object} RangeGroup~SearchOptions
+	 * @prop {boolean} [excl=false] Whether `element` should be treated like an exclusive bound of
+	 *  a range. This allows you to search for range boundaries, in addition to regular elements.
+	 * @prop {boolean} [end=false] When `excl` is true, whether `element` should be treated as an
+	 *  exclusive start (`false`) or end (`true`) range boundary
+	 * @prop {number} [first=0] Inclusive lower bound into {@link RangeGroup#ranges} for the
+	 *  search. If less than zero, zero is used.
+	 * @prop {number} [last=-1] Inclusive upper bound into {@link RangeGroup#ranges} for the
+	 *  search. A negative value counts from the end, clamping to zero, e.g. `-1` is equivalent to
+	 *  `this.ranges.length-1`. A positive value counts from the start, clamping to the last
+	 *  element.
+	*/
+
+	/** Output of {@link RangeGroup#search}
+	 * @typedef {object} RangeGroup~SearchResult
+	 * @prop {number} index Lower bound index; e.g. the position where `element` could be inserted
+	 *  to keep ranges sorted, or the range that contains `element`
+	 * @prop {boolean} has Whether the range at `index` contains the element
+	 * @prop {?RangeType~CompareResult} start Comparison with the {@link Range#start} from `index`.
+	 * 	This will be null if the search bounds (as given by first/last) were empty, or `index` is
+	 * 	beyond the last range (never when `has=true`). Comparison is made with `element` as `a`
+	 * @prop {?RangeType~CompareResult} end Comparison with the bounding {@link Range#end}.
+	 *  Comparison is made with `element` as `a`. The range end came from depends on whether a match
+	 *  was found or not:
+	 * 	
+	 * - `has=true`: The end from `index`. Will be null if `start` equaled the `element`, in which
+	 * 	 case the end comparison was skipped. You can manually compare the end if its needed.
+	 * - `has=false`: The end from `index-1`. Will be null if this is outside the search bounds
+	 * 	 (as given by first/last), including when the search bounds are empty.
+	 */
+
+	/** Find the position in {@link RangeGroup#ranges} where `element` could be inserted to
+	 * maintain a sorted array. If the element belongs to a range already, then the index to
+	 * that range would be returned, with `has` flag set. In other words, the index is the *lower
+	 * bound*: the first position that does not come before `element`.
+	 * 
+	 * The search output provides useful comparison information that was used to find the location.
+	 * For a simple boolean output, you may wish to use {@link RangeGroup#has} instead.
+	 * @param {any} element the element to search for
+	 * @param {?RangeGroup~SearchOptions} options customizes the options
+	 * @returns {RangeGroup~SearchResult}
+	 */
+	search(element, {excl=false, end=false, first=0, last=-1}={}){
+		// fix bounds
+		const l = this.ranges.length;
+		if (first < 0)
+			first = 0;
+		if (last < 0)
+			last = Math.max(-1,l+last);
+		else if (last >= l)
+			last = l-1;		
+		if (first > last)
+			return {index:last+1, has:false, start:null, end:null};
+		end = +end;
+
+		/* Find bounds, such that element is inside range [first.start, last.start);
+			We'll search for start bound first, rather than blending start+end comparisons together,
+			as it ends up reducing the number of compares per iteration when trying to do
+			interpolation search.
+		*/
+		let fcompare;
+		let lcompare = null;
+		find_start: {
+			/** Compare `element` (a) to `obj.start` (b) */
+			const compare_start = (obj) => this.type.compare(end, element, obj.start, excl, obj.startExcl);
+
+			fcompare = compare_start(this.ranges[first]);
+			if (fcompare.side < 0)
+				return {index:first, has:false, start:fcompare, end:null};
+			if (first === last){
+				last++;
+				break find_start;
+			}
+			if (!fcompare.side)
+				break find_start;
+			
+			lcompare = compare_start(this.ranges[last]);
+			if (lcompare.side >= 0){
+				first = last++;
+				fcompare = lcompare;
+				lcompare = null;
+				break find_start;
+			}
+			
+			while (first+1 < last){
+				// Inside (first.start, last.start)
+				/* Get estimated index where a match would be found. We are using interpolation search.
+					We are dealing with ranges not single points, so it is slightly different. Assume
+					evenly distributed ranges, meaning gaps are always the same.
+					- zero gap: floor(t*(last-first) + first) will be inside the correct range; want
+						to clamp between [first+1, last-1] however, since those are the range starts
+						that have not been compared yet
+					- maximal gap: round(t*(last-first) + first) will give closest range; you'll want
+						to clamp again here
+					Floor will be accurate for zero gap + 50% of maximal gap, so let's go with that
+
+					Distance for discrete values is going to be off by one, since we're specifying
+					distance as number of elements between. Where `width` is small and that becomes
+					significant, the partition index will also be off by one. I'm gonna say that's
+					acceptable, since you still get O(loglogn) complexity.
+				*/
+				let middle;
+				// clamp to last-1
+				if (!lcompare.distance)
+					middle = last-1;
+				else{
+					const width = fcompare.distance - lcompare.distance;
+					if (width && isFinite(width)){
+						const t = fcompare.distance/width;
+						middle = first + Math.max(1, Math.floor(t*(last-first)));
+					}
+					/* Fallback to binary search in cases:
+						- distances are equal; RangeType can do this to opt-out of interpolation search
+						- one of the bounds is +/-infinity
+						Since first+1 < last, it will be naturally within bounds [first+1, last-1]
+					*/
+					else middle = (first+last) >> 1;
+				}
+				const mcompare = compare_start(this.ranges[middle]);
+				// inside (middle.start, last.start)
+				if (mcompare.side >= 0){
+					first = middle;
+					fcompare = mcompare;
+					if (!fcompare.side)
+						break find_start;
+				}
+				// inside (first.start, middle.start)
+				else if (mcompare.side < 0){
+					last = middle;
+					lcompare = mcompare;
+				}
+			}
+		}
+
+		// equals first.start
+		if (!fcompare.side)
+			return {index:first, has:true, start:fcompare, end:null};
+		const fel = this.ranges[first];
+		const ecompare = this.type.compare(end | 0b10, element, fel.end, excl, fel.endExcl);
+		// inside (first.end, last.start)
+		if (ecompare.side > 0)
+			return {index:last, has:false, start:lcompare, end:ecompare};
+		// inside (first.start, first.end]
+		return {index:first, has:true, start:fcompare, end:ecompare};
+	}
+	/** Test whether an element is contained in this group. This uses {@link RangeGroup#search}
+	 * internally, returning {@link RangeGroup~SearchResult#has}.
+	 * @param {any} element the element to search for
+	 * @param {number} first lower bound into {@link RangeGroup#ranges} for the search
+	 * @param {number} last upper bound into {@link RangeGroup#ranges} for the search; a negative
+	 * 	value counts from the end, e.g. `-1` is equivalent to `this.ranges.length-1`
+	 * @returns {boolean}
+	 */
+	has(element, first=0, last=-1){
+		return this.search(element, first, last).has;
+	}
+
+	/** Generator for values within the range group. This calls {@link RangeType#iterate} internally
+	 * @param {boolean} forward iterate ranges forward or backward; forward indicates the first
+	 *  value will give a negative comparison against any subsequent values
+	 * @param {...any} args arguments to forward to the type's iterator
+	 * @yields {any} values from the range
+	 */
+	*iterate(forward=true, ...args){
+		let i, end, inc;
+		if (forward){
+			i = 0;
+			end = this.ranges.length;
+			inc = 1;
+		}
+		else{
+			i = this.ranges.length - 1;
+			end = inc = -1;
+		}
+		for (; i != end; i += inc){
+			const r = this.ranges[i];
+			yield* this.type.iterate(r, forward, ...args);
+		}
+	}
+	/** Iterator interface, allowing use with things like for-of loops or `Array.from`. To
+	 * customize how the values are iterated, pass arguments to {@link RangeGroup#iterate} instead.
+	 * @function
+	 * @name RangeGroup#@@iterator
+	 * @see RangeGroup#iterate
+	 */
+	[Symbol.iterator](){
+		return this.iterate();
 	}
 
 
@@ -957,281 +1155,6 @@ class RangeGroup{
 		for (const r of this.ranges)
 			s += this.type.size(r);
 		return s;
-	}
-
-	/** Output of {@link RangeGroup#search}
-	 * @typedef {object} RangeGroup~SearchResult
-	 * @prop {number} index Lower bound index; the position where `element` could be inserted to
-	 * 	keep ranges sorted, or the range that contains `element`
-	 * @prop {boolean} has Whether the range at `index` contains the element already
-	 */
-
-	/** Find the position in {@link RangeGroup#ranges} where `element` could be inserted to
-	 * maintain a sorted array. If the element belongs to a range already, then the index to
-	 * that range would be returned, with `has` flag set. In other words, the index is the *lower
-	 * bound*: the first position that does not come before `element`.
-	 * @param {any} element the element to search for
-	 * @param {number} first Inclusive lower bound into {@link RangeGroup#ranges} for the search. If
-	 *  less than zero, zero is used.
-	 * @param {number} last Inclusive upper bound into {@link RangeGroup#ranges} for the search. A
-	 *  negative value counts from the end, e.g. `-1` is equivalent to `this.ranges.length-1`. If
-	 *  beyond the end of the array, the last index of the array is used.
-	 * @returns {RangeGroup~SearchResult}
-	 */
-	search_old(element, {end=false, excl=false, first=0, last=-1}={}){
-		// fix bounds
-		const l = this.ranges.length;
-		if (first < 0)
-			first = 0;
-		if (last < 0)
-			last = Math.max(-1,l+last);
-		else if (last >= l)
-			last = l-1;		
-		if (first > last)
-			return {index:last+1, has:false};
-
-		let ret;
-		let fel, fcompare;
-		const start_mask = +end;
-		/** Compare `element` (a) to `obj.start` (b) */
-		const compare_start = (obj) => this.type.compare(start_mask, element, obj.start, excl, obj.startExcl);
-		const update_first = (idx) => {
-			first = idx;
-			fel = this.ranges[first];
-			fcompare = compare_start(fel);
-			if (fcompare.side < 0)
-				return {index:first, has:false};
-			if (!fcompare.side)
-				return {index:first, has:true};
-		};
-		if (ret = update_first(first))
-			return ret;
-
-		let lel, lcompare;
-		const end_mask = (end << 1) | 0b1;
-		/** Compare `obj.end` (a) to `element` (b) */
-		const compare_end = (obj) => this.type.compare(end_mask, obj.end, element, obj.endExcl, excl);
-		const update_last = (idx) => {
-			last = idx;
-			lel = this.ranges[last];
-			lcompare = compare_end(lel);
-			if (lcompare.side < 0)
-				return {index:last+1, has:false};
-			if (!lcompare.side)
-				return {index:last, has:true};
-		}
-		if (ret = update_last(last))
-			return ret;
-		
-		while (true) {
-			// start of loop iter: inside (first.start, last.end)
-			/* Get estimated index where a match would be found. We are using interpolation
-				search. We are dealing with ranges not single points, so it is slightly
-				different. Assume evenly distributed ranges, meaning gaps are always the same.
-				- zero gap: first+floor(t*(last-first+1)) will be inside the correct range
-					(equivalent to floor(t*(last+1) + (1-t)*first))
-				- maximal gap (reducing to single points): first+round(t*(last-first)) gives the closest
-				Floor will be accurate for zero gap + 50% of maximal gap, so let's go with that
-
-				Distance for discrete values is going to be off by one, since we're specifying
-				distance as number of elements between. Where `width` is small and that becomes
-				significant, the partition index will also be off by one. I'm gonna say that's
-				acceptable, since you still get O(loglogn) complexity.
-			*/
-			let middle;
-			partition: {
-				/* While bounds are exclusive, distance can still be zero:
-						e.g. find 4 in [0, 5]; fcompare = 3, lcompare = 0
-					This would give last+1 with the interpolation logic, so we handle explicity.
-					This also catches case where both fcompare/lcompare are zero:
-						e.g. find 4 in [3, 5]
-				*/
-				if (!lcompare.distance){
-					middle = last;
-					break partition;
-				}
-				if (fcompare.distance !== lcompare.distance){
-					const width = fcompare.distance + lcompare.distance;
-					if (isFinite(width)){
-						const t = fcompare.distance/width;
-						middle = first + Math.floor(t*(last-first)+t);
-						break partition;
-					}
-				}
-				/* Fallback to binary search in cases:
-					- distances are equal; RangeType can do this to opt-out of interpolation search
-					- one of the bounds is +/-infinity
-				*/
-				middle = (first+last) >> 1;
-			}
-			const mel = this.ranges[middle];
-
-			// TODO: middle == first or last
-			const scompare = compare_start(mel);
-			// inside (middle.start, last.end)
-			if (scompare.side > 0){
-				const ecompare = compare_end(mel);
-				// inside (middle.end, last.end)
-				if (ecompare.side < 0){
-					if (ret = update_first(middle+1))
-						return ret;
-					continue;
-				}
-			}
-			// inside (first.start, middle.start)
-			else if (scompare.side < 0){
-				if (ret = update_last(middle-1))
-					return ret;
-				continue;
-			}
-			// inside [middle.start, middle.end]
-			return {index:middle, has:true};
-		}
-	}
-	search(element, {end=false, excl=false, first=0, last=-1}={}){
-		// fix bounds
-		const l = this.ranges.length;
-		if (first < 0)
-			first = 0;
-		if (last < 0)
-			last = Math.max(-1,l+last);
-		else if (last >= l)
-			last = l-1;		
-		if (first > last)
-			return {index:last+1, has:false, start:null, end:null};
-		end = +end;
-
-		/* Find bounds, such that element is inside range [first.start, last.start);
-			We'll search for start bound first, rather than blending start+end comparisons together,
-			as it ends up reducing the number of compares per iteration when trying to do
-			interpolation search.
-		*/
-		let fcompare;
-		let lcompare = null;
-		find_start: {
-			/** Compare `element` (a) to `obj.start` (b) */
-			const compare_start = (obj) => this.type.compare(end, element, obj.start, excl, obj.startExcl);
-
-			fcompare = compare_start(this.ranges[first]);
-			if (fcompare.side < 0)
-				return {index:first, has:false};
-			if (first === last){
-				last++;
-				break find_start;
-			}
-			if (!fcompare.side)
-				break find_start;
-			
-			lcompare = compare_start(this.ranges[last]);
-			if (lcompare.side >= 0){
-				first = last++;
-				fcompare = lcompare;
-				lcompare = null;
-				break find_start;
-			}
-			
-			while (first+1 < last){
-				// Inside (first.start, last.start)
-				/* Get estimated index where a match would be found. We are using interpolation search.
-					We are dealing with ranges not single points, so it is slightly different. Assume
-					evenly distributed ranges, meaning gaps are always the same.
-					- zero gap: floor(t*(last-first) + first) will be inside the correct range; want
-						to clamp between [first+1, last-1] however, since those are the range starts
-						that have not been compared yet
-					- maximal gap: round(t*(last-first) + first) will give closest range; you'll want
-						to clamp again here
-					Floor will be accurate for zero gap + 50% of maximal gap, so let's go with that
-
-					Distance for discrete values is going to be off by one, since we're specifying
-					distance as number of elements between. Where `width` is small and that becomes
-					significant, the partition index will also be off by one. I'm gonna say that's
-					acceptable, since you still get O(loglogn) complexity.
-				*/
-				let middle;
-				// clamp to last-1
-				if (!lcompare.distance)
-					middle = last-1;
-				else{
-					const width = fcompare.distance - lcompare.distance;
-					if (width && isFinite(width)){
-						const t = fcompare.distance/width;
-						middle = first + Math.max(1, Math.floor(t*(last-first)));
-					}
-					/* Fallback to binary search in cases:
-						- distances are equal; RangeType can do this to opt-out of interpolation search
-						- one of the bounds is +/-infinity
-						Since first+1 < last, it will be naturally within bounds [first+1, last-1]
-					*/
-					else middle = (first+last) >> 1;
-				}
-				if (middle < first+1 || middle > last-1)
-					throw Error("assertion failed");
-				const mcompare = compare_start(this.ranges[middle]);
-				// inside (middle.start, last.start)
-				if (mcompare.side >= 0){
-					first = middle;
-					fcompare = mcompare;
-					if (!fcompare.side)
-						break find_start;
-				}
-				// inside (first.start, middle.start)
-				else if (mcompare.side < 0){
-					last = middle;
-					lcompare = mcompare;
-				}
-			}
-		}
-
-		if (!fcompare.side)
-			return {index:first, has:true, start:fcompare, end:null};
-		const fel = this.ranges[first];
-		const ecompare = this.type.compare(end | 0b10, element, fel.end, excl, fel.endExcl);
-		if (ecompare.side > 0)
-			return {index:last, has:false, start:lcompare, end:ecompare};
-		return {index:first, has:true, start:fcompare, end:ecompare};
-	}
-	/** Test whether an element is contained in this group. This uses {@link RangeGroup#search}
-	 * internally, returning {@link RangeGroup~SearchResult#has}.
-	 * @param {any} element the element to search for
-	 * @param {number} first lower bound into {@link RangeGroup#ranges} for the search
-	 * @param {number} last upper bound into {@link RangeGroup#ranges} for the search; a negative
-	 * 	value counts from the end, e.g. `-1` is equivalent to `this.ranges.length-1`
-	 * @returns {boolean}
-	 */
-	has(element, first=0, last=-1){
-		return this.search(element, first, last).has;
-	}
-
-	/** Generator for values within the range group. This calls {@link RangeType#iterate} internally
-	 * @param {boolean} forward iterate ranges forward or backward; forward indicates the first
-	 *  value will give a negative comparison against any subsequent values
-	 * @param {...any} args arguments to forward to the type's iterator
-	 * @yields {any} values from the range
-	 */
-	*iterate(forward=true, ...args){
-		let i, end, inc;
-		if (forward){
-			i = 0;
-			end = this.ranges.length;
-			inc = 1;
-		}
-		else{
-			i = this.ranges.length - 1;
-			end = inc = -1;
-		}
-		for (; i != end; i += inc){
-			const r = this.ranges[i];
-			yield* this.type.iterate(r, forward, ...args);
-		}
-	}
-	/** Iterator interface, allowing use with things like for-of loops or `Array.from`. To
-	 * customize how the values are iterated, pass arguments to {@link RangeGroup#iterate} instead.
-	 * @function
-	 * @name RangeGroup#@@iterator
-	 * @see RangeGroup#iterate
-	 */
-	[Symbol.iterator](){
-		return this.iterate();
 	}
 }
 // Method aliases -------------------------------------

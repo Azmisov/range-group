@@ -1,8 +1,6 @@
 # range-group
 
 ## TODO:
-- try integrating new compare into search + diff
-- integrate binary search into diff algo
 - type constructor
 - float/date/day/unicode types
 - auto-exclusive normalization; how to handle delete excl?

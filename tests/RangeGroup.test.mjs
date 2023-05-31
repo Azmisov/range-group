@@ -430,7 +430,7 @@ test("subset/superset", () => {
 	expect(a.isSuperset(d)).toBe(false);
 });
 
-test.only("search randomized", () => {
+test("search randomized", () => {
 	const samples = 100;
 	for (let s=0; s<samples; s++){
 		const [a,b] = rand_args();
@@ -463,7 +463,7 @@ test.only("search randomized", () => {
 		}
 	}
 });
-test.only("search/has cases", () => {
+test.skip("search/has cases", () => {
 	const a = new RangeGroup([[5,10],[15,20],[25,30],[35,40]], {type:IntType});
 	expect(a.search(0,{first:-2,last:-Infinity})).toEqual({index:0,has:false});
 	// returned index is based on last

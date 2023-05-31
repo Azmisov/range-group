@@ -38,28 +38,49 @@
 
 
 /**
- * Range interface for use with {@link RangeGroup}
+ * Generic range type interface for use with {@link RangeGroup}
  * @interface RangeType
  */
+/** Result of {@link RangeType.compare}
+ * @typedef {object} RangeType~CompareResult
+ * @prop {number} distance The signed distance between `a` and `b`. For continuous domains, this is
+ *  a traditional distance measure, e.g. `a - b` for numbers. For discrete domains, it should
+ *  measure the number of elements in between `a` and `b`; e.g. for integers, the distance between 3
+ *  and 5 is 1, since only one integer, 4, is between.
+ * 
+ * The `distance` is used for several things:
+ * 1. To merge adjacent ranges if the distance (or gap) between them is zero. For example, the
+ *    integer ranges `[0,2] [3,5]` or floating point ranges `[0,3) [3,5]` could be merged as
+ *    `[0,5]`. Another case might be, `[-2,-0] [+0,3]` which can be merged as `[-2,3]`.
+ * 2. To perform interpolation search in {@link RangeGroup#search}. You can opt-out of interpolation
+ *    search by returning the sign of distance (-1, 0, or +1); this causes the search to reduce
+ *    to binary search instead.
+ * @prop {number} side One of the following:
+ * - `-1`: `a` comes before `b`
+ * - `0`: `a` equals `b` exactly; signed zero `-0` is also fine here
+ * - `1`: `a` comes after `b`
+ */
 /**
- * Compares the start/end of two ranges
+ * Compares two start/end boundaries.
+ * 
+ * The comparison function should return a tuple, which is a little different than what you might
+ * use with `Array.prototype.sort`. This is to allow proper handling of exclusive bounds. As an
+ * example, consider the gap between ranges `[0,5) [5,10]`: the distance between the ranges is
+ * infinitely small, but not quite equal. So in this case, the compare function returns
+ * `{distance:0, side:-1}`, to indicate zero gap approaching from the left. See
+ * {@link RangeType~CompareResult} for more details.
  * @function
  * @static
  * @name RangeType.compare
- * @param {ComparisonModes} mode What combination of range starts/ends is being compared. You will
- *  likely need to handle exclusive/inclusive differently for range starts vs ends. Secondly,
- *  {@link ComparisonModes.END_START} mode allows you to specify whether two adjacent, but
- *  non-intersecting ranges can be merged by returning `-0`.
- * @param {any} a Range start/end to compare with
- * @param {any} b Range start/end to compare with
- * @returns {number} One of the following:
- * - negative number if `a` comes before `b`
- * - positive number if `a` comes after `b`
- * - `+0` if `a` and `b` have the same position
- * - For {@link ComparisonModes.END_START}, you may return `-0` (negative zero) if `a` comes before `b`,
- * 	 but there are no values between them. This indicates that the two ranges are adjacent and
- *   can be merged. For example, with integer ranges, you might return `-0` for
- *   `compare(ComparisonModes.END_START, 5, 6)`.
+ * @param {ComparisonModes} mode What combination of range starts/ends is being compared. See
+ * 	documentation for {@link ComparisonModes} for the specific enumeration values, or for details
+ * 	on using it as a bitmask instead. This allows you to properly handle exclusive bounds for start
+ * 	vs end.
+ * @param {any} a The {@link Range#start} or {@link Range#end} to be compared
+ * @param {any} b The {@link Range#start} or {@link Range#end} to compare with
+ * @param {?boolean} aExcl Whether `a` is an exclusive bound
+ * @param {?boolean} bExcl Whether `b` is an exclusive bound
+ * @returns {RangeType~CompareResult}
  */
 /**
  * Iterate all values inside the range
