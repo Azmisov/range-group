@@ -41,6 +41,25 @@
  * Generic range type interface for use with {@link RangeGroup}
  * @interface RangeType
  */
+/**
+ * @function
+ * @static
+ * @name RangeType.create
+ */
+/** Copy a {@link Range} of this {@link RangeType}
+ * @function
+ * @static
+ * @name RangeType.copy
+ * @param {Range} range the range to be copied
+ * @returns {Range} copied range
+ */
+/** Return the size, or cardinality of this range. This is called by {@link RangeGroup#size}
+ * @function
+ * @static
+ * @name RangeType.size
+ * @param {Range} range the range to retrieve the size of
+ * @returns {number} the range size
+ */
 /** Result of {@link RangeType.compare}
  * @typedef {object} RangeType~CompareResult
  * @prop {number} distance The signed distance between `a` and `b`. For continuous domains, this is
@@ -83,10 +102,13 @@
  * @returns {RangeType~CompareResult}
  */
 /**
- * Iterate all values inside the range
+ * Iterate values inside the range
  * @function
- * @name RangeType#iterate
- * @param {...any} args Arbitrary arguments used to customize the iteration
+ * @name RangeType.iterate
+ * @param {boolean} forward Whether values should be iterated forward or backward. The order of
+ * 	"forward" is up to the {@link RangeType}, but in general should correspond to "ascending" order.
+ * @param {...any} args Arbitrary arguments used to customize the iteration. These are forwarded
+ * 	from {@link RangeGroup#iterate}
  * @returns {iterable} Can return a generator, or some other object implementing the iterable
  * 	interface. This is called by {@link RangeGroup#iterate}
  */
@@ -94,20 +116,18 @@
 /** Set range start
  * @private
  */
-export function setStart(obj, value, excl){
+export function setStart(obj, value, excl, override=false){
 	obj.start = value;
-	if (excl)
+	if (excl || override)
 		obj.startExcl = excl;
-	else delete obj.startExcl;
 	return obj;
 }
 /** Set range end
  * @private
  */
-export function setEnd(obj, value, excl){
+export function setEnd(obj, value, excl, override=false){
 	obj.end = value;
-	if (excl)
+	if (excl || override)
 		obj.endExcl = excl;
-	else delete obj.endExcl;
 	return obj;
 }

@@ -82,13 +82,13 @@ class DiffState{
  * new RangeGroup({start:0, end:5})
  * // Arguments to construct a range
  * new RangeGroup([0,5])
- * // However the following would not be allowed, as it's interpreted as a list of Range's
- * new RangeGroup([new Date(),5])
- * new RangeGroup([["array","arg"],5])
+ * // However the following would not be allowed, as they're interpreted as a list of Ranges
+ * new RangeGroup([new Date(),5]) // bad!
+ * new RangeGroup([["array","arg"],5]) // bad!
  * ```
  * 
- * A `RangeGroup` must be in *normalized* form before you perform any operations on it. This means
- * its list of ranges are sorted ({@link RangeGroup#sort}) and non-intersecting
+ * A `RangeGroup` must be in *normalized* form before you perform any other operations on it. This
+ * means its list of ranges are sorted ({@link RangeGroup#sort}) and non-intersecting
  * ({@link RangeGroup#selfUnion}). To make it normalized, call {@link RangeGroup#normalize}, or pass
  * `normalize=true` option for your newly constructed `RangeGroup`. For efficiency, this is not done
  * automatically, as typical inputs are already "pre-normalized". Whenever you modify
@@ -111,14 +111,18 @@ class RangeGroup{
 	 * 	construction
 	 */
 
-	/** Create a new RangeGroup
-	 * @param {any} ranges This should be an array containing ranges for the group; each range can be a
-	 * preconstructed {@link Range} or an array of arguments to construct one. Any {@link Range}
-	 * will be reused, while the containing array is copied.
+	/** Arguments defining a RangeGroup. This should be an array containing ranges for the group;
+	 * each range can be a preconstructed {@link Range} or an array of arguments to construct one.
+	 * Any {@link Range} will be reused, while the containing array is copied.
 	 *	
 	 * For convenience, you can also pass just a single preconstructed range. You can pass a single
  	 * array of arguments to construct a range as well, but only if the first argument is not an
  	 * object (via `typeof`).
+	 * @typedef {any} RangeGroup~Definition
+	 */
+
+	/** Create a new RangeGroup
+	 * @param {RangeGroup~Definition} ranges Initial set of ranges for this group
 	 * @param {?RangeGroup~CreateOptions} options Options for creation
 	 */
 	constructor(ranges, {type=null, normalize=false}={}){
@@ -149,6 +153,17 @@ class RangeGroup{
 		else this.ranges = [];
 		if (normalize)
 			this.normalize();
+	}
+
+	/** Converts {@link RangeGroup~Definition} to a {@link RangeGroup}
+	 * @param {RangeGroup | RangeGroup~Definition} other
+	 * @returns {RangeGroup}
+	 * @private
+	 */
+	#convert(other){
+		if (!(other instanceof RangeGroup))
+			other = new RangeGroup(other, {type:this.type});
+		return other;
 	}
 
 	/** Perform comparison between two ranges
@@ -199,59 +214,76 @@ class RangeGroup{
 		return this;
 	}
 
+	/** Used for a few different methods to filter {@link RangeGroup#ranges}
+	 * @callback RangeGroup~Filter
+	 * @param {Range} range the range to check whether it should be included
+	 * @returns {boolean} whether the range should be included
+	 */
+
+	/** Options to customize {@link RangeGroup#selfUnion} behavior.
+	 * @typedef {object} RangeGroup~SelfUnionOptions
+	 * @prop {RangeGroup~Filter} [filter=null] Filter function to apply to each range
+	 * 	before unioning. This is useful for filtering by {@link Range#a} or {@link Range#b} nullity,
+	 * 	as returned by {@link RangeGroup#diff}.
+	 * @prop {boolean} [bool=false] If `true`, a boolean is returned from the method instead,
+	 *  indicating whether any resulting ranges would be output. See {@link RangeGroup#hasSelfUnion}
+	 * @prop {boolean} [copy=false] If `true`, a self-unioned copy is returned, rather than
+	 *  performing the modification in-place. See {@link RangeGroup#toSelfUnioned}
+	 */
+
 	/** Union of individual ranges within this range group (e.g. remove self-intersections). This
 	 * will remove empty ranges, where the start is after (and not equal) the end.
-	 * @returns {RangeGroup} modified `this`
+	 * @param {RangeGroup~SelfUnionOptions} options alters the self union behavior to accomodate a
+	 *  few different, common operations
+	 * @returns {RangeGroup | boolean} By default, modified `this`. If `copy` flag was set, it will
+	 *  return a modified copy instead. If `bool` flag was set, it will return true/false, whether
+	 *  the result would have been non-empty
 	 */
-	selfUnion(){
-		// find first where start <= end
-		let i = 0;
-		for (; i<this.ranges.length; i++){
-			const cur = this.ranges[i];
-			if (this.#compare(ComparisonModes.START_END, cur).side <= 0)
-				break;
-		}
-		if (i){
-			// TODO: use slice if this.ranges.length-i < i
-			this.ranges.splice(0, i);
-		}
-		if (!this.ranges.length)
-			return this;
-		// we have a valid range to start building from
-		let cur = this.ranges[0];
-		// splice arguments, to reduce calls to splice
+	selfUnion({filter=null, bool=false, copy=false}={}){
+		const out = copy ? this.toCleared() : this;
 		let splice_buffer = null;
-		for (i = 1; i < this.ranges.length; i++){
-			// TODO: could possibly have a "min/max" value in addition to comparator; if cur[1]
-			//	equals that maximum, we can discard the remaining ranges
-			const nxt = this.ranges[i];
-			// if end < start, discard the empty range
-			if (this.#compare(ComparisonModes.START_END, nxt).side <= 0){	
-				// can combine ranges
-				if (this.#compare(ComparisonModes.END_START, cur, nxt).distance >= 0){
+		let prev = null;
+		for (let i = 0; i<this.ranges.length; i++){
+			const cur = this.ranges[i];
+			// keep if passes filter and nonempty
+			if ((!filter || filter(cur)) && this.#compare(ComparisonModes.START_END, cur).side <= 0){
+				if (bool)
+					return true;
+				// merge with previous?
+				if (prev && this.#compare(ComparisonModes.END_START, prev, cur).distance >= 0){
 					// take the greater end
-					if (this.#compare(ComparisonModes.END, cur, nxt).side < 0)
-						setEnd(cur, nxt.end, nxt.endExcl);
+					if (this.#compare(ComparisonModes.END, prev, cur).side < 0)
+						setEnd(prev, cur.end, cur.endExcl, true);
+					// fallthrough to discard
 				}
-				// keep ranges separate
 				else{
-					if (splice_buffer){
-						i -= splice_buffer[1];
-						this.ranges.splice(...splice_buffer);
-						splice_buffer = null;
+					if (copy){
+						prev = this.type.copy(cur);
+						out.ranges.push(prev);
 					}
-					cur = nxt;
+					else{
+						prev = cur;
+						if (splice_buffer){
+							i -= splice_buffer[1];
+							out.ranges.splice(...splice_buffer);
+							splice_buffer = null;
+						}
+					}
 					continue;
 				}
 			}
-			// buffer deletions
-			if (splice_buffer)
-				splice_buffer[1]++;
-			else splice_buffer = [i,1];
+			// discard this range
+			if (!copy && !bool){
+				if (splice_buffer)
+					splice_buffer[1]++;
+				else splice_buffer = [i,1];
+			}
 		}
+		if (bool)
+			return false;
 		if (splice_buffer)
-			this.ranges.splice(...splice_buffer);
-		return this;
+			out.ranges.splice(...splice_buffer);
+		return out;
 	}
 
 	/** Options for calculating diff between two range groups. For use with {@link RangeGroup#diff}
@@ -295,12 +327,10 @@ class RangeGroup{
 	 * use options: `{copy:true, track_sources:true, self_union:false}`. This gives you the full
 	 * differences between the two groups, telling you which parts came from `a` or `b`. You can
 	 * reuse this result multiple times to get set operations, simply by filterering for
-	 * {@link Range#a} and/or {@link Range#b}.
+	 * {@link Range#a} and/or {@link Range#b}. See {@link RangeGroup#filter} and its variants, or
+	 * the `filter` option of {@link RangeGroup#selfUnion} adn its variants.
 	 * 
-	 * The range group **must** be in normalized form (see {@link RangeGroup#normalize}) prior to
-	 * diffing.
-	 * 
-	 * @param {RangeGroup} other The group to diff against
+	 * @param {RangeGroup | RangeGroup~Definition} other The group to diff against
 	 * @param {?RangeGroup~DiffOptions} options Options to customize the diff behavior
 	 * @returns {RangeGroup | boolean} Contains the diff result range group, which may equal
 	 * `this` if `copy` was false. If `bool` was true, a boolean value is instead returned
@@ -322,6 +352,7 @@ class RangeGroup{
 			if (filter & ~0b111)
 				throw Error("filter bits out of range");
 		}
+		other = this.#convert(other);
 		// uncommon case, but can cause problems with !copy logic since it assumes a/b are different
 		// arrays; can just optimize this case; a/b will be empty, only ab will be present
 		if (this.ranges === other.ranges){
@@ -344,7 +375,7 @@ class RangeGroup{
 			track_sources = false;
 
 		// iterator for a/b's ranges
-		const out = copy && !bool ? new RangeGroup([], {type:this.type, normalize:false}) : this;
+		const out = copy && !bool ? this.toCleared() : this;
 		const a = new DiffState(this);
 		const b = new DiffState(other);
 		/** Used to implement logic independent of a/b, where we can fetch one or the other with an
@@ -587,7 +618,7 @@ class RangeGroup{
 						if (bool)
 							return true;
 						if (!extend)
-							extend = setStart({}, end.cur.start, end.cur.startExcl);
+							extend = setStart(this.type.create(), end.cur.start, end.cur.startExcl);
 						if (!min)
 							remove();
 					}
@@ -669,7 +700,7 @@ class RangeGroup{
 						 * @returns {boolean} whether segment should be emitted; false could mean we are
 						 * 	merging/extending with the next segment, or this segment is filtered out
 						 */
-						function xy_segment(bit){
+						const xy_segment = (bit) => {
 							const smask = 1 << bit;
 							// this segment is ignored; guaranteed we won't ignore if extend is set
 							if (!(fmask & smask))
@@ -680,7 +711,7 @@ class RangeGroup{
 								// get x or y's start
 								const start_idx = min ^ bit;
 								const start = state[start_idx].cur;
-								base = setStart({}, start.start, start.startExcl);
+								base = setStart(this.type.create(), start.start, start.startExcl);
 								// merge with next segment?
 								if (merge_next){
 									extend = base;
@@ -713,7 +744,7 @@ class RangeGroup{
 						// we never emit here, since its possible there's intersections with subsequent ranges
 						if (fmask & 0b100 && !extend){
 							const start = state[max^1].cur;
-							extend = setStart({}, start.end, !start.endExcl);
+							extend = setStart(this.type.create(), start.end, !start.endExcl);
 							if (track_sources)
 								set_sources(extend, max);
 						}
@@ -917,21 +948,18 @@ class RangeGroup{
 		return {index:first, has:true, start:fcompare, end:ecompare};
 	}
 	/** Test whether an element is contained in this group. This uses {@link RangeGroup#search}
-	 * internally, returning {@link RangeGroup~SearchResult#has}.
-	 * @param {any} element the element to search for
-	 * @param {number} first lower bound into {@link RangeGroup#ranges} for the search
-	 * @param {number} last upper bound into {@link RangeGroup#ranges} for the search; a negative
-	 * 	value counts from the end, e.g. `-1` is equivalent to `this.ranges.length-1`
+	 * internally, returning the `has` result.
+	 * @param {...any} args arguments are the same as {@link RangeGroup#search}
 	 * @returns {boolean}
 	 */
-	has(element, first=0, last=-1){
-		return this.search(element, first, last).has;
+	has(...args){
+		return this.search(...args).has;
 	}
 
 	/** Generator for values within the range group. This calls {@link RangeType#iterate} internally
 	 * @param {boolean} forward iterate ranges forward or backward; forward indicates the first
 	 *  value will give a negative comparison against any subsequent values
-	 * @param {...any} args arguments to forward to the type's iterator
+	 * @param {...any} args arguments to forward to the RangeType's iterator
 	 * @yields {any} values from the range
 	 */
 	*iterate(forward=true, ...args){
@@ -963,7 +991,7 @@ class RangeGroup{
 
 	/** Compute the in-place set union between `this` and `other`: `a ∪ b`. This uses
 	 * {@link RangeGroup#diff} internally
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {RangeGroup} modified `this`
 	 */
 	union(other){
@@ -971,7 +999,7 @@ class RangeGroup{
 	}
 	/** Compute the in-place set intersection between `this` and `other`: `a ∩ b`. This uses
 	 * {@link RangeGroup#diff} internally
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {RangeGroup} modified `this`
 	 */
 	intersect(other){
@@ -979,7 +1007,7 @@ class RangeGroup{
 	}
 	/** Compute the in-place set difference between `this` and `other`: `a - b`. This uses
 	 * {@link RangeGroup#diff} internally
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {RangeGroup} modified `this`
 	 */
 	difference(other){
@@ -987,7 +1015,7 @@ class RangeGroup{
 	}
 	/** Compute the in-place set symmetric difference between `this` and `other`: `a Δ b`. This uses
 	 * {@link RangeGroup#diff} internally
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {RangeGroup} modified `this`
 	 */
 	symmetricDifference(other){
@@ -1000,15 +1028,28 @@ class RangeGroup{
 		this.ranges = [];
 		return this;
 	}
-	/** Filter the results  */
-	filter({filter=false, self_union=true}){
-		// TODO
+	/** Filter the ranges. You might use this to filter by {@link Range#a} or {@link Range#b}
+	 *  nullity, as returned by {@link RangeGroup#diff}
+	 * @param {RangeGroup~Filter} predicate
+	 * @returns {RangeGroup} modified `this`
+	 */
+	filter(predicate){
+		this.ranges = this.ranges.filter(predicate);
+		return this;
 	}
 
 
+	/** Same as {@link RangeGroup#selfUnion}, but returns a copy instead. This is as though
+	 * the `copy` option were set to `true`
+	 * @param {?function} filter optional filter param, which is the same as the filter that can
+	 * 	be passed to {@link RangeGroup#selfUnion}
+	 */
+	toSelfUnioned(filter){
+		return this.selfUnion({filter, copy:true});
+	}
 	/** Same as {@link RangeGroup#union}, but returning a copy instead of modifying
 	 * 	the range group in-place
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {RangeGroup} new group containing the union
 	 */
 	toUnioned(other){
@@ -1016,7 +1057,7 @@ class RangeGroup{
 	}
 	/** Same as {@link RangeGroup#intersect}, but returning a copy instead of modifying
 	 * 	the range group in-place
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {RangeGroup} new group containing the intersection
 	 */
 	toIntersected(other){
@@ -1024,7 +1065,7 @@ class RangeGroup{
 	}
 	/** Same as {@link RangeGroup#difference}, but returning a copy instead of modifying
 	 * 	the range group in-place
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {RangeGroup} new group containing the difference
 	 */
 	toDifferenced(other){
@@ -1032,7 +1073,7 @@ class RangeGroup{
 	}
 	/** Same as {@link RangeGroup#symmetricDifference}, but returning a copy instead of modifying
 	 * 	the range group in-place
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {RangeGroup} new group containing the symmetric difference
 	 */
 	toSymmetricDifferenced(other){
@@ -1045,19 +1086,39 @@ class RangeGroup{
 	toCleared(){
 		return new RangeGroup([], {type: this.type});
 	}
+	/** Same as {@link RangeGroup#filter}, but returns a copy instead
+	 * @param {RangeGroup~Filter} predicate
+	 * @returns {RangeGroup} a filtered copy
+	 */
+	toFiltered(predicate){
+		const copy = this.toCleared();
+		copy.ranges = this.ranges.filter(predicate);
+		return copy;
+	}
 
-
+	/** Check if any ranges would remain after calling {@link RangeGroup#selfUnion}. This is as
+	 * though the `bool` option were set to `true`
+	 * @param {?function} filter optional filter param, which is the same as the filter that can
+	 * 	be passed to {@link RangeGroup#selfUnion}
+	 * @returns {boolean}
+	 */
+	hasSelfUnion(filter){
+		return this.selfUnion({filter, bool:true});
+	}
 	/** Check if a union of `this` and `other` would be non-empty: `a ∪ b`.
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {boolean}
 	 */
 	hasUnion(other){
 		// no need to use diff here, since result is trivial
-		return !this.isEmpty() || !other.isEmpty();
+		if (!this.isEmpty())
+			return true;
+		other = this.#convert(other);
+		return !other.isEmpty();
 	}
 	/** Check if `this` intersects with `other`: `a ∩ b`. This uses {@link RangeGroup#diff}
 	 * internally
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {boolean}
 	 */
 	hasIntersection(other){
@@ -1065,7 +1126,7 @@ class RangeGroup{
 	}
 	/** Check if `this` has values not present in `other`: `a - b`. This uses
 	 * {@link RangeGroup#diff} internally
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {boolean}
 	 */
 	hasDifference(other){
@@ -1073,10 +1134,11 @@ class RangeGroup{
 	}
 	/** Check if `this` has values not present in `other`: `a - b`. This uses
 	 * {@link RangeGroup#diff} internally
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {boolean}
 	 */
 	hasSymmetricDifference(other){
+		other = this.#convert(other);
 		// can do an optimized version here pretty easily
 		const ar = this.ranges;
 		const or = other.ranges;
@@ -1093,30 +1155,43 @@ class RangeGroup{
 		}
 		return false;
 	}
+	/** Check if any range matches the filter predicate
+	 * @param {RangeGroup~Filter} predicate
+	 * @returns {boolean}
+	 */
+	hasFilter(predicate){
+		return this.ranges.some(predicate);
+	}
 
 
 	/** Check if `this` and `other` range groups are equal, meaning they have identical elements:
 	 * `a = b`. This uses {@link RangeGroup#hasSymmetricDifference} internally, returning its
 	 * negated value
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {boolean} true if equal
 	 */
-	isEqual(other){ return !this.hasSymmetricDifference(other); }
+	isEqual(other){
+		return !this.hasSymmetricDifference(other);
+	}
 	/** Check if this range group is empty, meaning there are no elements: `a = ∅`
 	 * @returns {boolean} true if empty
 	 */
-	isEmpty(){ return !this.ranges.length; }
+	isEmpty(){
+		return !this.ranges.length;
+	}
 	/** Check whether `this` is a subset of `other`, meaning all of its elements are also in
 	 * `other`: `a ⊆ b`. This uses {@link RangeGroup#hasDifference} internally, returning its
 	 * negated value
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {boolean} true if a subset
 	 */
-	isSubset(other){ return !this.hasDifference(other); }
+	isSubset(other){
+		return !this.hasDifference(other);
+	}
 	/** Check whether `this` is a proper/strict subset of `other`, meaning all of its elements are
 	 * in `other`, but does not have all the elements of `other`: `a ⊂ b`. This uses two calls to
 	 * {@link RangeGroup#hasDifference} internally
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {boolean} true if a proper/strict subset
 	 */
 	isProperSubset(other){
@@ -1129,7 +1204,7 @@ class RangeGroup{
 	/** Check whether `this` is a superset of `other`, meaning all `other` elements are also in
 	 * `this`: `a ⊇ b`. This is equivalent to `other.isSubset(this)`
 	 * @see RangeGroup#isSubset
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {boolean} true if a superset
 	 */
 	isSuperset(other){
@@ -1138,7 +1213,7 @@ class RangeGroup{
 	/** Check whether `this` is a proper/strict superset of `other`, meaning all `other` elements are also in
 	 * `this`: `a ⊃ b`. This is equivalent to `other.isProperSubset(this)`
 	 * @see RangeGroup#isProperSubset
-	 * @param {RangeGroup} other
+	 * @param {RangeGroup | RangeGroup~Definition} other
 	 * @returns {boolean} true if a proper/strict superset
 	 */
 	isProperSuperset(other){
