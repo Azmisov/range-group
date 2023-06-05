@@ -1,4 +1,4 @@
-import IntType from "../src/types/int.mjs";
+import IntType from "../src/types/Int.mjs";
 import { ComparisonModes } from "../src/RangeGroup.mjs";
 
 test("IntType iterate", () => {

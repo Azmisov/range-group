@@ -3,23 +3,19 @@
 /** Interface that all Range objects must implement
  * @interface Range
  */
-/**
- * Start of range
+/** Start of range
  * @name Range#start
  * @type {any}
  */
-/**
- * End of range
+/** End of range
  * @name Range#end
  * @type {any}
  */
-/**
- * Whether {@link Range#start} is exclusive; if falsey or not present, it defaults to inclusive
+/** Whether {@link Range#start} is exclusive; if undefined or null, it defaults to inclusive
  * @name Range#startExcl
  * @type {?boolean}
  */
-/**
- * Whether {@link Range#end} is exclusive; if falsey or not present, it defaults to inclusive
+/** Whether {@link Range#end} is exclusive; if undefined or null, it defaults to inclusive
  * @name Range#endExcl
  * @type {?boolean}
  */
@@ -37,14 +33,24 @@
  */
 
 
-/**
- * Generic range type interface for use with {@link RangeGroup}
+/** Generic range type interface for use with {@link RangeGroup}. This provides all the definitions
+ * for creating and manipulating a {@link Range}. An important design choice was to allow ranges to
+ * be defined with plain JSON objects. Because of this, {@link RangeType} provide a C-like interface
+ * for performing operations on those objects, rather than forcing a class based design. You can
+ * still use a class to implement a particular type of {@link Range}; if going that route, you'll
+ * supply a supplementary {@link RangeType} to {@link RangeGroup}, where you are simply calling the
+ * class methods.
  * @interface RangeType
  */
-/**
+// TODO: maybe have create perform this.copy(args[0]) if only one argument?
+/** Create a new {@link Range} object. If no arguments are passed, an empty/default range should
+ * be created. Otherwise, a new range should be initialized using the arguments passed. The form
+ * of these arguments is up to the {@link RangeType}.
  * @function
  * @static
  * @name RangeType.create
+ * @param {...any} args arguments to initialize the range
+ * @returns {Range} the newly created range
  */
 /** Copy a {@link Range} of this {@link RangeType}
  * @function
@@ -79,8 +85,7 @@
  * - `0`: `a` equals `b` exactly; signed zero `-0` is also fine here
  * - `1`: `a` comes after `b`
  */
-/**
- * Compares two start/end boundaries.
+/** Compares two start/end boundaries.
  * 
  * The comparison function should return a tuple, which is a little different than what you might
  * use with `Array.prototype.sort`. This is to allow proper handling of exclusive bounds. As an
@@ -101,8 +106,7 @@
  * @param {?boolean} bExcl Whether `b` is an exclusive bound
  * @returns {RangeType~CompareResult}
  */
-/**
- * Iterate values inside the range
+/** Iterate values inside the range. This is called by {@link RangeGroup#iterate}
  * @function
  * @name RangeType.iterate
  * @param {boolean} forward Whether values should be iterated forward or backward. The order of
@@ -110,24 +114,25 @@
  * @param {...any} args Arbitrary arguments used to customize the iteration. These are forwarded
  * 	from {@link RangeGroup#iterate}
  * @returns {iterable} Can return a generator, or some other object implementing the iterable
- * 	interface. This is called by {@link RangeGroup#iterate}
+ * 	interface
  */
-
-/** Set range start
- * @private
+/** Set the starting bound of a {@link Range}. Range starts are always modified using this method,
+ * so that a {@link RangeType} can implement *auto-normalization*: normalizing the bound to be
+ * inclusive.
+ * @function
+ * @name RangeType.setStart
+ * @param {Range} range the range to modify
+ * @param {any} start the starting bound
+ * @param {?boolean} startExcl whether the start is exclusive
+ * @returns {Range} the modified range
  */
-export function setStart(obj, value, excl, override=false){
-	obj.start = value;
-	if (excl || override)
-		obj.startExcl = excl;
-	return obj;
-}
-/** Set range end
- * @private
+/** Set the ending bound of a {@link Range}. Range ends are always modified using this method,
+ * so that a {@link RangeType} can implement *auto-normalization*: normalizing the bound to be
+ * inclusive.
+ * @function
+ * @name RangeType.setEnd
+ * @param {Range} range the range to modify
+ * @param {any} end the new ending bound
+ * @param {?boolean} endExcl whether the end is exclusive 
+ * @returns {Range} the modified range
  */
-export function setEnd(obj, value, excl, override=false){
-	obj.end = value;
-	if (excl || override)
-		obj.endExcl = excl;
-	return obj;
-}

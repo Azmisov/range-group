@@ -1,5 +1,3 @@
-import { setStart, setEnd } from "./Range.mjs";
-
 /** Comparison modes for two ranges. When comparing two ranges, you can compare any combination of
  * range starts and ends. The enumeration is setup as a bitset, so you can identify which of a/b is
  * start/end:
@@ -96,6 +94,11 @@ class DiffState{
  * calling other methods.
  */
 class RangeGroup{
+	/** A decent value, as identified by benchmarks/interpolation_cutoff.mjs, for switching from
+	 * interpolation to linear search inside diff
+	 * @private
+	 */
+	static INTERPOLATION_CUTOFF = 12;
 	/** Default type to be used if none is provided in the constructor of {@link RangeGroup}
 	 * @type {RangeType}
 	 * @memberof RangeGroup
@@ -111,13 +114,14 @@ class RangeGroup{
 	 * 	construction
 	 */
 
-	/** Arguments defining a RangeGroup. This should be an array containing ranges for the group;
-	 * each range can be a preconstructed {@link Range} or an array of arguments to construct one.
-	 * Any {@link Range} will be reused, while the containing array is copied.
+	/** Arguments defining a RangeGroup. A falsey value initializes an empty RangeGroup. Otherwise,
+	 * this should be an array containing ranges for the group; each range can be a preconstructed
+	 * {@link Range} or an array of arguments to construct one. Any {@link Range} will be reused,
+	 * while the containing array is copied.
 	 *	
 	 * For convenience, you can also pass just a single preconstructed range. You can pass a single
  	 * array of arguments to construct a range as well, but only if the first argument is not an
- 	 * object (via `typeof`).
+ 	 * object (as identified by `typeof`).
 	 * @typedef {any} RangeGroup~Definition
 	 */
 
@@ -130,26 +134,33 @@ class RangeGroup{
 		 * @type {RangeType}
 		 */
 		this.type = type === null ? RangeGroup.default_type : type;
+		// in case no default type was specified
+		if (!type)
+			throw Error("RangeGroup.default_type has not been set");
 		/** Internal list of ranges
 		 * @type {Range[]}
 		 */
 		this.ranges;
 
 		// single Range
-		if (!Array.isArray(ranges))
-			this.ranges = [ranges];
+		if (!Array.isArray(ranges)){
+			if (ranges)
+				this.ranges = [ranges];
+			else this.ranges = [];
+		}
 		else if (ranges.length){
 			const first = ranges[0];
 			if (typeof first === "object"){
 				// arguments for a list of ranges
 				if (Array.isArray(first))
 					this.ranges = ranges.map(v => this.type.create(...v));
-				// list of Range
+				// list of Range; copy containing array
 				else this.ranges = Array.from(ranges);
 			}
 			// arguments for single range
 			else this.ranges = [this.type.create(...ranges)];
 		}
+		// copy, in case the array was passed to multiple RangeGroup constructors
 		else this.ranges = [];
 		if (normalize)
 			this.normalize();
@@ -253,7 +264,7 @@ class RangeGroup{
 				if (prev && this.#compare(ComparisonModes.END_START, prev, cur).distance >= 0){
 					// take the greater end
 					if (this.#compare(ComparisonModes.END, prev, cur).side < 0)
-						setEnd(prev, cur.end, cur.endExcl, true);
+						this.type.setEnd(prev, cur.end, cur.endExcl);
 					// fallthrough to discard
 				}
 				else{
@@ -499,12 +510,12 @@ class RangeGroup{
 		/** Mark the end of the min range, e.g. no more intersections possible
 		 * @param {number} mask first bit used as `is_b` boolean; otherwise mask forwarded to set_sources
 		 */
-		function range_end(mask){
+		const range_end = (mask) => {
 			const is_b = mask & 0b1
 			const end = state[is_b];
 			// aggregate range, or range with trimmed start
 			if (extend){
-				setEnd(extend, end.cur.end, end.cur.endExcl);
+				this.type.setEnd(extend, end.cur.end, end.cur.endExcl);
 				if (track_sources)
 					set_sources(extend, mask);
 				add(extend);
@@ -553,7 +564,7 @@ class RangeGroup{
 							const long = +(remaining[1] >= remaining[0]);
 							// interpolation/binary search
 							// TODO: tune this parameter
-							if (remaining[long] > 0){
+							if (remaining[long] > RangeGroup.INTERPOLATION_CUTOFF){
 								const l = state[long];
 								const s = state[long^1];
 								const o = l.group.search(s.cur.start, {excl:s.cur.startExcl, first:l.idx});
@@ -618,7 +629,7 @@ class RangeGroup{
 						if (bool)
 							return true;
 						if (!extend)
-							extend = setStart(this.type.create(), end.cur.start, end.cur.startExcl);
+							extend = this.type.setStart(this.type.create(), end.cur.start, end.cur.startExcl);
 						if (!min)
 							remove();
 					}
@@ -711,7 +722,7 @@ class RangeGroup{
 								// get x or y's start
 								const start_idx = min ^ bit;
 								const start = state[start_idx].cur;
-								base = setStart(this.type.create(), start.start, start.startExcl);
+								base = this.type.setStart(this.type.create(), start.start, start.startExcl);
 								// merge with next segment?
 								if (merge_next){
 									extend = base;
@@ -727,7 +738,7 @@ class RangeGroup{
 						// x segment (disjoint start)
 						if (xy_segment(0)){
 							const end = state[min^1].cur;
-							setEnd(base, end.start, !end.startExcl);
+							this.type.setEnd(base, end.start, !end.startExcl);
 							if (track_sources)
 								set_sources(base, min);
 							add(base);
@@ -735,7 +746,7 @@ class RangeGroup{
 						// y segment (intersection)
 						if (xy_segment(1)){
 							const end = state[max^1].cur;
-							setEnd(base, end.end, end.endExcl);
+							this.type.setEnd(base, end.end, end.endExcl);
 							if (track_sources)
 								set_sources(base, 2);
 							add(base);
@@ -744,7 +755,7 @@ class RangeGroup{
 						// we never emit here, since its possible there's intersections with subsequent ranges
 						if (fmask & 0b100 && !extend){
 							const start = state[max^1].cur;
-							extend = setStart(this.type.create(), start.end, !start.endExcl);
+							extend = this.type.setStart(this.type.create(), start.end, !start.endExcl);
 							if (track_sources)
 								set_sources(extend, max);
 						}
@@ -1041,8 +1052,8 @@ class RangeGroup{
 
 	/** Same as {@link RangeGroup#selfUnion}, but returns a copy instead. This is as though
 	 * the `copy` option were set to `true`
-	 * @param {?function} filter optional filter param, which is the same as the filter that can
-	 * 	be passed to {@link RangeGroup#selfUnion}
+	 * @param {?RangeGroup~Filter} filter optional filter param, which is the same as the filter
+	 *  that can be passed to {@link RangeGroup#selfUnion}
 	 */
 	toSelfUnioned(filter){
 		return this.selfUnion({filter, copy:true});
@@ -1098,8 +1109,8 @@ class RangeGroup{
 
 	/** Check if any ranges would remain after calling {@link RangeGroup#selfUnion}. This is as
 	 * though the `bool` option were set to `true`
-	 * @param {?function} filter optional filter param, which is the same as the filter that can
-	 * 	be passed to {@link RangeGroup#selfUnion}
+	 * @param {?RangeGroup~Filter} filter optional filter param, which is the same as the filter
+	 *  that can be passed to {@link RangeGroup#selfUnion}
 	 * @returns {boolean}
 	 */
 	hasSelfUnion(filter){
@@ -1274,4 +1285,4 @@ for (const alias in aliases)
  * @function
  */
 
-export { RangeGroup, ComparisonModes };
+export { RangeGroup as default, ComparisonModes };

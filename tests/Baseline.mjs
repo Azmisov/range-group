@@ -1,6 +1,8 @@
-import IntType from "../src/types/int.mjs";
+import IntType from "../src/types/Int.mjs";
 
-/** Simple, inefficient baseline implementation of RangeGroup that holds exhaustive set */
+/** Simple, inefficient baseline implementation of RangeGroup that holds exhaustive set. Only
+ * works for discrete types, e.g. IntType
+ */
 export default class Baseline{
 	/** Create new baseline group
 	 * @param ranges 2d array of arguments for constructing

@@ -253,26 +253,71 @@ to signify unsigned zero I guess. Assume equal, a.compare(b):
 - incl, incl: 0
 !aExcl - !bExcl
 
-Exclusion on integers:
+Exclusion on integers (delta) / reals (side):
 	delta = a-b
 	start:
-		- same, no change
-		- aexcl: +1
-		- bexcl: -1
+		- same, no change/0
+		- aexcl: +1/+1
+		- bexcl: -1/-1
 	end:
-		- same no change
-		- aexcl: -1
-		- bexcl: +1
+		- same no change/0
+		- aexcl: -1/-1
+		- bexcl: +1/+1
 	start_end:
-		- incl/incl: no change
-		- excl/excl: +2
-		- excl/incl: +1
-		- incl/excl: +1
+		- incl/incl: no change/0
+		- excl/excl: +2/+1
+		- excl/incl: +1/+1
+		- incl/excl: +1/+1
 	end_start:
-		- incl/incl: no change
-		- excl/excl: -2
-		- excl/incl: -1
-		- incl/excl: -1
+		- incl/incl: no change/0
+		- excl/excl: -2/-1
+		- excl/incl: -1/-1
+		- incl/excl: -1/-1
+For integers, its easier just to modify the discrete value before doing the subtract.
+For reals, let's do a truth table:
+	bEnd,aEnd,bExcl,aExcl output
+	!aExcl && !bExcl -> zero
+   mode bitcount = 1
+	0100 0
+	1000 0
+
+	1011 1
+	1001 1
+	1010 1
+
+	0111 -1	
+	0101 -1
+	0110 -1
+
+   mode bitcount = 0/2
+   with xor added, we see its bExclXor - aExclXor
+	0000 00 0
+	1100 11 0
+	0011 11 0
+	1111 00 0
+	0010 10 1
+	1101 10 1
+	1110 01 -1
+	0001 01 -1
+
+I can't see any obvious simple formulas. There's probably an algorithmic way to find the optimal
+formula. I'm thinking some kind of decision tree, where we split by biggest distinguisher first.
+So aExcl==bExcl almost catches all of the zero cases; the two exceptions are where mode bitcount
+is 1. Then we get bEnd as next biggest distinguisher, with two exceptions.
+
+Another idea is trying to do a subtraction.
+
+Playing around a bit, here's one:
+	if !(aExcl||bExcl)
+		out = 0
+	else if (mode bitcount != 1)
+		out = (bExcl xor bEnd) - (aExcl xor aEnd)
+	else
+		out = mode & 0b1 ? -1 : 1
+That seems to be the simplest I've been able to come up with so far.
+Hmmmm, well I've benchmarked and its pretty much identical sped to a "simple" version, the one
+I use for the discrete case. So might as well stick with the simple version.
+
 
 Need to be able to sort by start/end:
 	[4,-] comes before [7,-] with two values in between

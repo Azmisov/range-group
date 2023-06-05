@@ -1,11 +1,11 @@
 import {expect, jest} from '@jest/globals';
 import seed from "seed-random";
-import IntType from "../src/types/int.mjs";
+import IntType from "../src/types/Int.mjs";
 import { ComparisonModes, RangeGroup } from "../src/RangeGroup.mjs";
 import Baseline from "./Baseline.mjs";
 const rand = seed("RangeGroupTests");
 
-console.log(rand(), rand(), rand());
+// console.log(rand(), rand(), rand());
 
 // increase time when debugging
 jest.setTimeout(6000000);
@@ -50,6 +50,25 @@ test("self union cases", () => {
 	// should merge all
 	r = new RangeGroup([[1,4],[5,6],[7,7],[8,10]], {type:IntType, normalize:true});
 	expect(r.ranges).toHaveLength(1);
+
+	// bool version
+	r = new RangeGroup([[1,4],[5,6],[7,7],[8,10]], {type:IntType, normalize:false});
+	const hasChanged = diffChanged(r);
+	expect(r.hasSelfUnion()).toBe(true);
+	expect(r.hasSelfUnion(r => r.start > 11)).toBe(false);
+	hasChanged(r);
+
+	// copy version
+	const a = r.toSelfUnioned();
+	const b = r.toSelfUnioned(v => v.start > 5);
+	hasChanged(r);
+	expect(a.ranges).toEqual([{start:1,end:10}]);
+	expect(b.ranges).toEqual([{start:7,end:10}]);
+
+	// in-place filter
+	const i = new RangeGroup([{start:0,end:10,a:5,b:null},{start:11,end:12,a:6,b:0},{start:13,end:15,a:null,b:2}], {type:IntType});
+	i.selfUnion({filter:r => r.b !== null});
+	expect(i.ranges).toEqual([{start:11,end:15,a:6,b:0}]);
 });
 
 test("iterate", () => {
@@ -83,6 +102,10 @@ test("args", () => {
 	expect(() => {
 		r1.diff(r2, {filter:{ab:100}});
 	}).toThrow(/out of range/)
+	// no RangeType given
+	expect(() => {
+		new RangeGroup();
+	}).toThrow(/RangeGroup\.default_type/)
 });
 
 /* DIFF TESTING:
@@ -340,14 +363,14 @@ function setup_case(){
 }
 function set_operation(method, copyMethod, boolMethod, result){
 	const [a,b] = setup_case();
-	const cache = structuredClone(a.ranges);
+	const didChange = diffChanged(a);
 	// these methods should not mutate
 	const c = a[copyMethod](b);
-	expect(a.ranges).toEqual(cache);
+	didChange(a);
 	expect(c.ranges).toEqual(result);
 	if (boolMethod){
 		const d = a[boolMethod](b);
-		expect(a.ranges).toEqual(cache);
+		didChange(a);
 		expect(d).toBe(!!result.length);
 	}
 	// this can mutate
@@ -393,6 +416,24 @@ test("symmetric difference/equal extra", () => {
 	expect(a.isEqual(d)).toBe(true);
 });
 test("clear", set_operation.bind(null, "clear", "toCleared", null, []));
+test("filter", () => {
+	const a = new RangeGroup([{start:0,end:10,a:5,b:null},{start:11,end:12,a:6,b:0},{start:13,end:15,a:null,b:2}], {type:IntType});
+	const didChange = diffChanged(a);
+	// these methods should not mutate
+	const c = a.toFiltered((r) => r.b !== null);
+	didChange(a);
+	expect(c.ranges).toEqual([{start:11,end:12,a:6,b:0},{start:13,end:15,a:null,b:2}], {type:IntType});
+	// bool method
+	const d = a.hasFilter((r) => r.b !== null);
+	didChange(a);
+	expect(d).toBe(true);
+	const e = a.hasFilter((r) => r.a > 7);
+	didChange(a);
+	expect(e).toBe(false);
+	// mutating method
+	a.filter(r => r.a !== null && r.b !== null);
+	expect(a.ranges).toEqual([{start:11,end:12,a:6,b:0}], {type:IntType});
+});
 test("empty", () => {
 	const a = new RangeGroup([[0,5]], {type:IntType});
 	expect(a.isEmpty()).toBe(false);
@@ -463,22 +504,22 @@ test("search randomized", () => {
 		}
 	}
 });
-test.skip("search/has cases", () => {
+test("search/has cases", () => {
 	const a = new RangeGroup([[5,10],[15,20],[25,30],[35,40]], {type:IntType});
-	expect(a.search(0,{first:-2,last:-Infinity})).toEqual({index:0,has:false});
+	expect(a.search(0,{first:-2,last:-Infinity})).toEqual({index:0,has:false,start:null,end:null});
 	// returned index is based on last
-	expect(a.search(0,{first:10,last:-Infinity})).toEqual({index:0,has:false});
+	expect(a.search(0,{first:10,last:-Infinity})).toEqual({index:0,has:false,start:null,end:null});
 	// last greater than length
-	expect(a.search(22,{first:0,last:Infinity})).toEqual({index:2,has:false});
+	expect(a.search(22,{first:0,last:Infinity})).toEqual({index:2,has:false,end:{distance:1,side:1},start:{distance:-2,side:-1}});
 	// bounds restrict result from being correct position
-	expect(a.search(33,{first:0,last:1})).toEqual({index:2,has:false});
-	expect(a.search(2,{first:2,last:3})).toEqual({index:2,has:false});
+	expect(a.search(33,{first:0,last:1})).toEqual({index:2,has:false,end:{distance:12,side:1},start:null});
+	expect(a.search(2,{first:2,last:3})).toEqual({index:2,has:false,start:{distance:-22,side:-1},end:null});
 	// has
 	expect(a.has(5)).toBe(true);
 	expect(a.has(12)).toBe(false);
 	// empty
 	a.clear();
-	expect(a.search(0,0,-1)).toEqual({index:0,has:false});
+	expect(a.search(0,{first:0,last:-1})).toEqual({index:0,has:false,start:null,end:null});
 });
 test("size", () => {
 	const a = new RangeGroup([[5,10],[15,20],[25,30],[35,40]], {type:IntType});
