@@ -1,8 +1,8 @@
-import {create, copy} from "./common.mjs";
+import {create, copy} from "./helpers/common.mjs";
 import {
 	compare as compare_float_normalized,
 	size as size_float
-} from "./FloatNormalized.mjs";
+} from "./FloatNorm.mjs";
 
 function compare(mode, a, b){
 	const out = compare_float_normalized(mode, a, b);
@@ -14,11 +14,12 @@ function size(r){
 	return size_float(r)+1;
 }
 
-/** This is similar to {@link IntType}, but where the range bounds have been normalized to always be
- * inclusive. This can be easier to work with, and omits the extra logic needed to handle exclusive
- * bounds. For example, `(0,5)` would be normalized on creation to be `[1,4]` instead. 
+/** This is the same as {@link IntType}, but where the range bounds have been normalized to always
+ * be inclusive. This can be easier to work with, and omits the extra logic needed to handle
+ * exclusive bounds. For example, `(0,5)` would be normalized on creation to be `[1,4]` instead.
+ * @implements {RangeType}
  */
-const IntNormalizedType = {
+const IntNormType = {
 	create,
 	copy,
 	compare,
@@ -41,5 +42,5 @@ const IntNormalizedType = {
 	}
 };
 
-export default IntNormalizedType;
+export default IntNormType;
 export { compare, size };

@@ -71,6 +71,9 @@ class DiffState{
  * set operations on them. Create a new `RangeGroup` like so:
  * 
  * ```js
+ * // Optionally set a default type first
+ * RangeGroup.default_type = IntType
+ * 
  * // Supply a preconstructed Range object
  * new RangeGroup([{start:0, end:5}])
  * // Arguments to construct ranges
@@ -199,7 +202,7 @@ class RangeGroup{
 		}
 	}
 
-	/** Make a deep copy of this range group. This calls {@link RangeType#copy} internally
+	/** Make a deep copy of this range group. This calls {@link RangeType.copy} internally.
 	 * @returns {RangeGroup}
 	 */
 	copy(){
@@ -967,7 +970,8 @@ class RangeGroup{
 		return this.search(...args).has;
 	}
 
-	/** Generator for values within the range group. This calls {@link RangeType#iterate} internally
+	/** Generator for values within the range group. This calls {@link RangeType.iterate}
+	 * internally.
 	 * @param {boolean} forward iterate ranges forward or backward; forward indicates the first
 	 *  value will give a negative comparison against any subsequent values
 	 * @param {...any} args arguments to forward to the RangeType's iterator
@@ -1232,8 +1236,11 @@ class RangeGroup{
 	}
 
 	/** Get the total number of elements held by this group. This dynamically sums up the size of
-	 * each range in the group, so it is not a constant-time operation. To see how many contiguous
-	 * ranges there are, just get the length of {@link RangeGroup#ranges}.
+	 * each range in the group, so it is not a constant-time operation. This calls
+	 * {@link RangeType.size} internally.
+	 * 
+	 * If you wish to see how many contiguous ranges there are, get the length of
+	 * {@link RangeGroup#ranges} instead.
 	 * @returns {number}
 	 */
 	size(){

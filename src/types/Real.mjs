@@ -1,19 +1,19 @@
-import {create, copy, setStart, setEnd} from "./common.mjs";
+import {create, copy, setStart, setEnd} from "./helpers/common.mjs";
 import {
 	compare as compare_float_normalized,
 	size
-} from "./FloatNormalized.mjs";
+} from "./FloatNorm.mjs";
 
 /** Implementation of {@link RangeType} for real values. You can use this to implement any
  * continuous {@link RangeType}, so long as you can map them to the domain of reals. In reality the
- * code will be using floating point arithmetic. However the assumptions made by the
+ * operations will be using floating point arithmetic. However the assumptions made by the
  * {@link RangeType.compare} method for this type are that each value is a point on a continuous
  * number line.
  * 
  * Inputs for this type are [coerced to
  * numbers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number#number_coercion)
  * prior to calculations.
- * @implements RangeType
+ * @implements {RangeType}
  */
 const RealType = {
 	create,

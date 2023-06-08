@@ -1,8 +1,8 @@
-import {create, copy, setStart, setEnd} from "./common.mjs";
+import {create, copy, setStart, setEnd} from "./helpers/common.mjs";
 import {
 	compare as compare_int_normalized,
 	size as size_int_normalized
-} from "./IntNormalized.mjs";
+} from "./IntNorm.mjs";
 
 /** Implementation of {@link RangeType} for integer values. You can use this to implement
  * any discrete {@link RangeType}, so long as you can map the values to the domain of integers.
@@ -10,7 +10,7 @@ import {
  * Inputs for this type are [coerced to
  * numbers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number#number_coercion)
  * prior to calculations.
- * @implements RangeType
+ * @implements {RangeType}
  */
 const IntType = {
 	create,
@@ -55,4 +55,6 @@ const IntType = {
 	}
 };
 
-export default IntType;
+const DateType = IntType;
+
+export { IntType as default, DateType };

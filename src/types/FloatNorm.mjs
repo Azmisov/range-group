@@ -1,4 +1,4 @@
-import {create, copy} from "./common.mjs";
+import {create, copy} from "./helpers/common.mjs";
 
 function compare_unnormalized(mode, a, b){
 	// prefixed + to do explicit cast to number
@@ -62,11 +62,11 @@ function next_after(start, direction){
  * Normalization uses typed arrays and BigInt to get the binary representation of a number as a
  * floating point, meaning possibly less browser support than {@link RealType}. While the logic for
  * handling exclusive bounds is ommitted, the {@link RangeType.compare} method needs to perform
- * extra calculations to determine if two values are adjacent floating point numbers, and thus have
- * zero distance.
- * @implements RangeType
+ * extra calculations to determine floating point adjacency; so the type is likely slower for
+ * typical use cases.
+ * @implements {RangeType}
  */
-const FloatNormalizedType = {
+const FloatNormType = {
 	create,
 	copy,
 	size,
@@ -90,5 +90,5 @@ const FloatNormalizedType = {
 	}
 };
 
-export default FloatNormalizedType;
+export default FloatNormType;
 export { compare_unnormalized as compare, size }
