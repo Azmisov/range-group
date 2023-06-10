@@ -1,17 +1,13 @@
-import {create, copy} from "./helpers/common.mjs";
-import {
-	compare as compare_float_normalized,
-	size as size_float
-} from "./FloatNorm.mjs";
+import { create, copy, compare as compare_base, size as size_base } from "./helpers/common.mjs";
 
 function compare(mode, a, b){
-	const out = compare_float_normalized(mode, a, b);
+	const out = compare_base(mode, a, b);
 	// distance is just values in-between for discrete
 	out.distance -= out.side;
 	return out;
 }
 function size(r){
-	return size_float(r)+1;
+	return size_base(r)+1;
 }
 
 /** This is the same as {@link IntType}, but where the range bounds have been normalized to always
@@ -25,18 +21,20 @@ const IntNormType = {
 	compare,
 	size,
 	setStart(range, start, startExcl){
-		range.start = start + (startExcl^0);
+		range.start = +start + (startExcl^0);
+		return range;
 	},
 	setEnd(range, end, endExcl){
-		range.end = end - (endExcl^0);
+		range.end = +end - (endExcl^0);
+		return range;
 	},
-	*iterate(r, forward){
-		if (forward){
-			for (let i = r.start; i <= r.end; i++)
+	*iterate(r, reverse){
+		if (reverse){
+			for (let i = r.end; i >= r.start; i--)
 				yield i;
 		}
 		else{
-			for (let i = r.end; i >= r.start; i--)
+			for (let i = r.start; i <= r.end; i++)
 				yield i;
 		}
 	}

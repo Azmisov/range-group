@@ -1,3 +1,4 @@
+import { setStart, setEnd } from "./helpers/common.mjs";
 import UnicodeNormType from "./UnicodeNorm.mjs";
 import IntType from "./Int.mjs";
 
@@ -10,14 +11,23 @@ import IntType from "./Int.mjs";
  * encoding), then by their prefix, then by their final codepoint. Distances are always infinite
  * unless the two strings have the same length and prefix.
  * 
- * When creating a range, the UTF-32 string length of {@link Range#start} and {@link Range#end} must
- * be equal. For performance, no validation is performed when you call {@link RangeType.setStart} or
- * {@link RangeType.setEnd} manually. You can call `UnicodeType.validate(range) -> bool` to manually
- * check if a range is valid.
+ * To create a valid {@link Range}, the following must be true of {@link Range#start} and {@link Range#end}:
+ * - the UTF-32 string length must be equal
+ * - all but the last codepoint must be equal (the prefixes)
+ * - the last codepoint of {@link Range#end} should be greater or equal
+ * 
+ * Like all other builtin types, for performance no validation is performed when you call
+ * {@link RangeType.setStart} or {@link RangeType.setEnd}. As strings can be more tricky to work
+ * with (e.g. the unicode string length is not immediately obvious with grapheme clusters), you can
+ * call `UnicodeType.validate(range) -> bool` to double check if a range is valid. This is simply
+ * transforming the result of `UnicodeType.compare` to a boolean.
  * 
  * This uses {@link IntType} internally for operations on codepoints.
  * @implements {RangeType}
  */
 const UnicodeType = Object.assign({}, UnicodeNormType);
 UnicodeType.base_type = IntType;
+// no need for special handling here
+UnicodeType.setStart = setStart;
+UnicodeType.setEnd = setEnd;
 export default UnicodeType;

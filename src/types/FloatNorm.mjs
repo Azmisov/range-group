@@ -1,17 +1,6 @@
-import {create, copy} from "./helpers/common.mjs";
+import { create, copy, compare, size } from "./helpers/common.mjs";
 
-function compare_unnormalized(mode, a, b){
-	// prefixed + to do explicit cast to number
-	const distance = +a-b;
-	const side = Math.sign(distance);
-	return {distance, side};
-}
-function size(r){
-	return +r.end-r.start;
-}
 
-const _f64 = new Float64Array(1)
-const _b64 = new BigInt64Array(_f64.buffer);
 /** Gets next floating point number in a particular direction.
  * Minorly adapted from: https://stackoverflow.com/a/72185420/379572
  * @param {number} start number to modify
@@ -21,6 +10,8 @@ const _b64 = new BigInt64Array(_f64.buffer);
  * @private
  */
 function next_after(start, direction){
+	const _f64 = new Float64Array(1)
+	const _b64 = new BigInt64Array(_f64.buffer);
 	// Branch to descending case first as it is more costly than ascending
 	// case due to start != 0.0d conditional.
 	if (start > direction) {
@@ -64,6 +55,9 @@ function next_after(start, direction){
  * handling exclusive bounds is ommitted, the {@link RangeType.compare} method needs to perform
  * extra calculations to determine floating point adjacency; so the type is likely slower for
  * typical use cases.
+ * 
+ * Unlike {@link RealType}, an {@link RangeType.iterate} implementation is provided, which iterates
+ * through every representable floating point number in the range.
  * @implements {RangeType}
  */
 const FloatNormType = {
@@ -71,7 +65,7 @@ const FloatNormType = {
 	copy,
 	size,
 	compare(mode, a, b){
-		const out = compare_unnormalized(mode, a, b);
+		const out = compare(mode, a, b);
 		if (out.side){
 			if (next_after(a, -out.side*Infinity) === b)
 				out.distance = 0;
@@ -82,13 +76,31 @@ const FloatNormType = {
 		if (startExcl)
 			start = next_after(start, Infinity);
 		range.start = start;
+		return range;
 	},
 	setEnd(range, end, endExcl){
 		if (endExcl)
 			end = next_after(end, -Infinity);
 		range.end = end;
+		return range;
+	},
+	*iterate(range, reverse){
+		let s, e;
+		if (reverse){
+			s = range.end;
+			e = range.start;
+		}
+		else{
+			s = range.start;
+			e = range.end;
+		}
+		while (true){
+			yield s;
+			if (s === e)
+				return;
+			s = next_after(s, e);
+		}
 	}
 };
 
 export default FloatNormType;
-export { compare_unnormalized as compare, size }

@@ -1,8 +1,5 @@
-import {create, copy, setStart, setEnd} from "./helpers/common.mjs";
-import {
-	compare as compare_int_normalized,
-	size as size_int_normalized
-} from "./IntNorm.mjs";
+import { create, copy, setStart, setEnd } from "./helpers/common.mjs";
+import { compare, size } from "./IntNorm.mjs";
 
 /** Implementation of {@link RangeType} for integer values. You can use this to implement
  * any discrete {@link RangeType}, so long as you can map the values to the domain of integers.
@@ -29,27 +26,27 @@ const IntType = {
 			a = +a + 1 - ((mode & 0b1) << 1);
 		if (bExcl)
 			b = +b + 1 - (mode & 0b10);
-		return compare_int_normalized(mode, a, b);
+		return compare(mode, a, b);
 	},
 	size(r){
-		let s = size_int_normalized(r);	
+		let s = size(r);	
 		if (r.startExcl) s--;
 		if (r.endExcl) s--;
 		return s;
 	},
-	*iterate(r, forward){
+	*iterate(r, reverse){
 		// using xor to possibly invert, and convert to number in single op;
 		// it handles conversion of `undefined` values, where alternative is to cast to boolean first, then number
-		if (forward){
-			let i = r.start + (r.startExcl^0);
-			const end = r.end + (r.endExcl^1);
-			for (; i < end; i++)
-				yield i;
-		}
-		else{
+		if (reverse){
 			let i = r.end - (r.endExcl^0);
 			const end = r.start - (r.startExcl^1);
 			for (; i > end; i--)
+				yield i;
+		}
+		else{
+			let i = r.start + (r.startExcl^0);
+			const end = r.end + (r.endExcl^1);
+			for (; i < end; i++)
 				yield i;
 		}
 	}

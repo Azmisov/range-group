@@ -14,6 +14,14 @@ function length(str){
 		l++;
 	return l;
 }
+/** Get the UTF-16 string length for a given codepoint
+ * @memberof UnicodeHelpers
+ * @param {number} codepoint the unicode codepoint
+ * @returns {number} two if its a surrogate pair, else one
+ */
+function utf16Length(codepoint){
+	return 1 + (codepoint >= 0x10000);
+}
 /** Compare the length of two strings, using the count of unicode codepoints
  * @memberof UnicodeHelpers
  * @param {string} a reference string
@@ -54,7 +62,7 @@ function* pairwiseIterate(a, b){
 		ai += 1 + (an >= 0x10000);
 		if (ai >= a_len)
 			return;
-		bi += 1 + (an >= 0x10000);
+		bi += 1 + (bn >= 0x10000);
 	}
 }
 /** Get the last codepoint of a string
@@ -74,4 +82,4 @@ function lastCodepoint(str){
 	return str.codePointAt(str.length-1);
 }
 
-export {length, compareLength, pairwiseIterate, lastCodepoint};
+export {length, utf16Length, compareLength, pairwiseIterate, lastCodepoint};

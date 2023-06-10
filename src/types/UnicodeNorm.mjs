@@ -1,6 +1,6 @@
 import IntNormType from "./IntNorm.mjs";
 import { create, copy } from "./helpers/common.mjs";
-import { compareLength, lastCodepoint } from "./helpers/unicode.mjs";
+import { compareLength, lastCodepoint, utf16Length } from "./helpers/unicode.mjs";
 
 /** This is the same as {@link UnicodeType}, but where the range bounds have been normalized to
  * always be inclusive. This can be easier to work with, and omits the extra logic needed to handle
@@ -15,15 +15,17 @@ const UnicodeNormType = {
 	copy,
 	setStart(range, start, startExcl){
 		const last = lastCodepoint(start);
-		const prefix = start.slice(0, -last.length);
+		const prefix = start.slice(0, -utf16Length(last));
 		this.base_type.setStart(range, last, startExcl);
-		range.start = prefix+String.fromCodePoint(last);
+		range.start = prefix+String.fromCodePoint(range.start);
+		return range;
 	},
-	setStart(range, end, endExcl){
+	setEnd(range, end, endExcl){
 		const last = lastCodepoint(end);
-		const prefix = end.slice(0, -last.length);
-		this.base_type.setStart(range, last, endExcl);
-		range.end = prefix+String.fromCodePoint(last);
+		const prefix = end.slice(0, -utf16Length(last));
+		this.base_type.setEnd(range, last, endExcl);
+		range.end = prefix+String.fromCodePoint(range.end);
+		return range;
 	},
 	size(range){
 		// delegate to base_type
@@ -39,14 +41,14 @@ const UnicodeNormType = {
 			differences in the non-last dimension. So we return infinity there, e.g. like they are
 			separate number lines. This also means it will fallback to binary search in those cases
 		*/
-		let side = compare_unicode_length(a, b);
+		let side = compareLength(a, b);
 		// same lengths?
 		degenerate: if (!side){
 			// extract prefix; must be equal
 			const a_last = lastCodepoint(a);
 			const b_last = lastCodepoint(b);
-			let a_prefix_len = a.length-a_last.length;
-			let b_prefix_len = b.length-b_last.length;
+			let a_prefix_len = a.length - utf16Length(a_last);
+			let b_prefix_len = b.length - utf16Length(b_last);
 			// quick check for inequality
 			side = a_prefix_len - b_prefix_len;
 			if (side)
@@ -71,6 +73,7 @@ const UnicodeNormType = {
 	},
 	*iterate(range, ...args){
 		const start = lastCodepoint(range.start);
+		const start_len = utf16Length(start);
 		// delegate to base_type
 		const gen = this.base_type.iterate({
 			start,
@@ -78,8 +81,8 @@ const UnicodeNormType = {
 			startExcl: range.startExcl,
 			endExcl: range.endExcl
 		}, ...args);
-		if (range.start.length !== start.length){
-			const prefix = range.start.slice(0, -start.length);
+		if (range.start.length !== start_len){
+			const prefix = range.start.slice(0, -start_len);
 			for (const code of gen)
 				yield (prefix+String.fromCodePoint(code));
 			return;
@@ -90,7 +93,8 @@ const UnicodeNormType = {
 	},
 	// check that start/end are same length
 	validate(range){
-		return !compareLength(range.start, range.end);
+		const res = this.compare(0b10, range.start, range.end, range.startExcl, range.endExcl);
+		return isFinite(res.distance) && res.side <= 0;
 	}
 };
 

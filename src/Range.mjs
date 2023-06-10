@@ -70,8 +70,8 @@
  * @typedef {object} RangeType~CompareResult
  * @prop {number} distance The signed distance between `a` and `b`. For continuous domains, this is
  *  a traditional distance measure, e.g. `a - b` for numbers. For discrete domains, it should
- *  measure the number of elements in between `a` and `b`; e.g. for integers, the distance between 3
- *  and 5 is 1, since only one integer, 4, is between.
+ *  measure the number of elements **in between** `a` and `b`; e.g. for integers, the distance
+ *  between 3 and 5 is 1, since only one integer, 4, is between.
  * 
  * The `distance` is used for several things:
  * 1. To merge adjacent ranges if the distance (or gap) between them is zero. For example, the
@@ -109,8 +109,8 @@
 /** Iterate values inside the range. This is called by {@link RangeGroup#iterate}
  * @function
  * @name RangeType.iterate
- * @param {boolean} forward Whether values should be iterated forward or backward. The order of
- * 	"forward" is up to the {@link RangeType}, but in general should correspond to "ascending" order.
+ * @param {?boolean} reverse Whether values should be iterated forward or backward. The order of is
+ *  up to the {@link RangeType}, but in general *forward* should correspond to *ascending* order.
  * @param {...any} args Arbitrary arguments used to customize the iteration. These are forwarded
  * 	from {@link RangeGroup#iterate}
  * @returns {iterable} Can return a generator, or some other object implementing the iterable

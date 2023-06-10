@@ -1,14 +1,12 @@
-import {create, copy, setStart, setEnd} from "./helpers/common.mjs";
-import {
-	compare as compare_float_normalized,
-	size
-} from "./FloatNorm.mjs";
+import {create, copy, compare, size, setStart, setEnd} from "./helpers/common.mjs";
 
 /** Implementation of {@link RangeType} for real values. You can use this to implement any
  * continuous {@link RangeType}, so long as you can map them to the domain of reals. In reality the
  * operations will be using floating point arithmetic. However the assumptions made by the
  * {@link RangeType.compare} method for this type are that each value is a point on a continuous
  * number line.
+ * 
+ * No {@link RangeType.iterate} implementation is provided, as it represents a continuous type.
  * 
  * Inputs for this type are [coerced to
  * numbers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number#number_coercion)
@@ -27,7 +25,7 @@ const RealType = {
  	 * *sidedness* of a value: e.g. the range end of `[0.5,4.75)` comes before `[0,5,4.75]`.
 	 */
 	compare(mode, a, b, aExcl, bExcl){
-		const out = compare_float_normalized(mode, a, b);
+		const out = compare(mode, a, b);
 		// handle exclusion
 		if (!out.side){
 			// similar computation to normalization for discrete case

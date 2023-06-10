@@ -1,3 +1,4 @@
+import IntNormType from "./IntNorm.mjs";
 import { create, copy } from "./helpers/common.mjs";
 
 const abstract_type = {
@@ -17,12 +18,12 @@ const abstract_type = {
 	create,
 	setStart(range, start, startExcl){
 		this.base_type.setStart(range, this.toBaseType(start), startExcl);
-		range.start = new Date(range.start);
+		range.start = new Date(range.start*this.unit);
 		return range;
 	},
 	setEnd(range, end, endExcl){
 		this.base_type.setEnd(range, this.toBaseType(end), endExcl);
-		range.end = new Date(range.end);
+		range.end = new Date(range.end*this.unit);
 		return range;
 	},
 	copy(range){

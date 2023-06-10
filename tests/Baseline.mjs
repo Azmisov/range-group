@@ -17,14 +17,14 @@ export default class Baseline{
 		this.values = Array.from(s);
 		this.values.sort((a,b) => a-b);
 	}
-	*iterate(forward=true){
-		if (forward){
-			for (const v of this.values)
-				yield v;
-		}
-		else{
+	*iterate(reverse=false){
+		if (reverse){
 			for (let i=this.values.length-1; i>=0; --i)
 				yield this.values[i];
+		}
+		else{
+			for (const v of this.values)
+				yield v;
 		}
 	}
 	[Symbol.iterator](){

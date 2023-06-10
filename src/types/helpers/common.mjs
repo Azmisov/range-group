@@ -48,6 +48,30 @@ function setEnd(range, end, endExcl){
 	else delete range.endExcl;
 	return range;
 }
+/** Basic implementation of {@link RangeType.compare}. This uses the numeric difference for
+ * `distance`, and the sign of that value for `side`. The inputs are [coerced to
+ * numbers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number#number_coercion)
+ * prior to calculation.
+ * 
+ * This isn't useful on its own (technically a normalized, real type) but can be used to build other
+ * types.
+ * @memberof CommonType
+ */
+function compare(mode, a, b){
+	// prefixed + to do explicit cast to number
+	const distance = +a-b;
+	const side = Math.sign(distance);
+	return {distance, side};
+}
+/** Basic implementation of {@link RangeType.size}. This simply takes the difference in
+ * {@link Range#end} and {@link Range#start}, with values [coerced to
+ * numbers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number#number_coercion).
+ * This is suitable for continuous types, but not for discrete.
+ * @memberof CommonType
+ */
+function size(r){
+	return +r.end-r.start;
+}
 
 /** Simple decorator that adds fuzzy comparison to an existing {@link RangeType}. This causes ranges
  * to be merged if their endpoints are within `epsilon` distance. It can be especially useful if
@@ -57,12 +81,12 @@ function setEnd(range, end, endExcl){
  * @param {number} epsilon the absolute threshold at which {@link RangeType~CompareResult}
  *  `distance` is clamped to zero
  * @param {RangeType} type the type whose {@link RangeType.compare} method should be wrapped
- * @param {boolean} extend if true, a new {@link RangeType} is created that extends `type`; if
- *  false, the {@link RangeType.compare} method of `type` is simply overwritten
+ * @param {boolean} [subclass=true] if true, a new {@link RangeType} is created that extends `type`;
+ *  if false, the {@link RangeType.compare} method of `type` is simply overwritten
  * @returns {RangeType} depending on the value of `extend`, either `type` or a new type that
  *  inherits from `type`
  */
-function compareEpsilon(epsilon, type, extend=false){
+function compareEpsilon(epsilon, type, subclass=true){
 	const compare = type.compare;
 	const wrapper = function(...args){
 		const out = compare(...args)
@@ -70,10 +94,10 @@ function compareEpsilon(epsilon, type, extend=false){
 			out.distance = 0;
 		return out;
 	};
-	if (extend)
+	if (subclass)
 		type = Object.create(type);
 	type.compare = wrapper;
 	return type;
 }
 
-export { create, copy, setStart, setEnd, compareEpsilon };
+export { create, copy, setStart, setEnd, compareEpsilon , compare, size};

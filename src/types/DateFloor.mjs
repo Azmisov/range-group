@@ -1,7 +1,6 @@
 import IntType from "./Int.mjs";
 import DateFloorNormType from "./DateFloorNorm.mjs"
 
-
 /** This is similar to {@link DateType}, but where fractions of a *time unit* are ignored. This
  * supports second, minute, hour, and day time units. Each of these is accessible as
  * `DateType.Second`, etc. As an example, `new Date("2023-06-08T01:33:59.380Z")`,
@@ -26,7 +25,14 @@ import DateFloorNormType from "./DateFloorNorm.mjs"
  * [new Date("15:59 1/15"), new Date("16:00 1/15")]
  * ```
  * 
-  This uses {@link IntType} internally as a base type.
+ * You can think of ranges as indicating *occupancy* within a time span. For example, with hour
+ * being the time unit, the following range:
+ * ```js
+ * [new Date("06:59 1/15"), new Date("08:00 1/15")]
+ * ```
+ * occupies hours 6 (for one second), 7 (for the full hour), and 8 (infinitesimally).
+ * 
+ * This uses {@link IntType} internally as a base type.
  * @implements {RangeType}
  */
 const DateFloorType = {};

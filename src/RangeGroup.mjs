@@ -972,25 +972,25 @@ class RangeGroup{
 
 	/** Generator for values within the range group. This calls {@link RangeType.iterate}
 	 * internally.
-	 * @param {boolean} forward iterate ranges forward or backward; forward indicates the first
+	 * @param {?boolean} reverse iterate ranges forward or backward; forward indicates the first
 	 *  value will give a negative comparison against any subsequent values
 	 * @param {...any} args arguments to forward to the RangeType's iterator
 	 * @yields {any} values from the range
 	 */
-	*iterate(forward=true, ...args){
+	*iterate(reverse=false, ...args){
 		let i, end, inc;
-		if (forward){
+		if (reverse){
+			i = this.ranges.length - 1;
+			end = inc = -1;
+		}
+		else{
 			i = 0;
 			end = this.ranges.length;
 			inc = 1;
 		}
-		else{
-			i = this.ranges.length - 1;
-			end = inc = -1;
-		}
 		for (; i != end; i += inc){
 			const r = this.ranges[i];
-			yield* this.type.iterate(r, forward, ...args);
+			yield* this.type.iterate(r, reverse, ...args);
 		}
 	}
 	/** Iterator interface, allowing use with things like for-of loops or `Array.from`. To
@@ -1292,4 +1292,4 @@ for (const alias in aliases)
  * @function
  */
 
-export { RangeGroup as default, ComparisonModes };
+export { RangeGroup, ComparisonModes };

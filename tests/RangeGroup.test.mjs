@@ -1,7 +1,6 @@
 import {expect, jest} from '@jest/globals';
 import seed from "seed-random";
-import IntType from "../src/types/Int.mjs";
-import { ComparisonModes, RangeGroup } from "../src/RangeGroup.mjs";
+import { IntType, ComparisonModes, RangeGroup } from "../src/barrel.mjs";
 import Baseline from "./Baseline.mjs";
 const rand = seed("RangeGroupTests");
 
@@ -76,7 +75,7 @@ test("iterate", () => {
 	const r = new RangeGroup(args, {type:IntType});
 	const b = new Baseline(args);
 	expect(Array.from(r)).toEqual(Array.from(b));
-	expect(Array.from(r.iterate(false))).toEqual(Array.from(b.iterate(false)));
+	expect(Array.from(r.iterate())).toEqual(Array.from(b.iterate()));
 });
 
 test("args", () => {
@@ -85,7 +84,7 @@ test("args", () => {
 	let r2 = new RangeGroup({start:0,end:5}, {type: IntType});
 	let r3 = new RangeGroup([{start:0,end:5}], {type: IntType});
 	let r4 = new RangeGroup([[0,5]], {type: IntType});
-	let b1 = Array.from(new Baseline([[0,5]]).iterate());
+	let b1 = Array.from(new Baseline([[0,5]]).iterate(false));
 	for (let r of [r1,r2,r3,r4]){
 		expect(Array.from(r)).toEqual(b1);
 	}
@@ -182,7 +181,7 @@ function diffSorted(group){
 // Check that sources match srcA/srcB
 function diffSources(out, srcA, srcB){
 	function toSets(group){
-		const single = group.ranges.map(r => new Set(IntType.iterate(r)));
+		const single = group.ranges.map(r => new Set(IntType.iterate(r, true)));
 		const all = new Set(group);
 		return [single, all];
 	}
@@ -204,7 +203,7 @@ function diffSources(out, srcA, srcB){
 	for (const r of out.ranges){
 		// one must be non-null
 		expect(validSource(r.a, srcA_single) || validSource(r.b, srcB_single));
-		for (const v of IntType.iterate(r)){
+		for (const v of IntType.iterate(r, true)){
 			correctSource(v, r.a, srcA_single, srcA_all);
 			correctSource(v, r.b, srcB_single, srcB_all);			
 		}
