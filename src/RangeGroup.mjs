@@ -566,7 +566,6 @@ class RangeGroup{
 							const remaining = [a.remaining(), b.remaining()];
 							const long = +(remaining[1] >= remaining[0]);
 							// interpolation/binary search
-							// TODO: tune this parameter
 							if (remaining[long] > RangeGroup.INTERPOLATION_CUTOFF){
 								const l = state[long];
 								const s = state[long^1];
@@ -918,21 +917,30 @@ class RangeGroup{
 					acceptable, since you still get O(loglogn) complexity.
 				*/
 				let middle;
-				// clamp to last-1
-				if (!lcompare.distance)
-					middle = last-1;
-				else{
-					const width = fcompare.distance - lcompare.distance;
-					if (width && isFinite(width)){
-						const t = fcompare.distance/width;
-						middle = first + Math.max(1, Math.floor(t*(last-first)));
+				const ld = -lcompare.distance;
+				// clamp to last-1; fcompare could also be zero, but then we're equally close
+				// theoretically, so doesn't make a difference which we choose
+				partition: {
+					if (!ld)
+						middle = last-1;
+					else{
+						const fd = fcompare.distance;
+						if (fd !== ld){
+							// Assuming normalized, lcompare < 0 && fcompare >= 0; so width > 0
+							const width = fd+ld;
+							if (isFinite(width)){
+								// this can also handle binary search (t=0.5), but we'll do optimized path for that
+								const t = fd/width;
+								middle = first + Math.max(1, Math.floor(t*(last-first)));
+								break partition;
+							}
+						}
+						/* Fallback to binary search in cases:
+							- one of the bounds is +/-infinity
+							Since first+1 < last, it will be naturally within bounds [first+1, last-1]
+						*/
+						middle = (first+last) >> 1;
 					}
-					/* Fallback to binary search in cases:
-						- distances are equal; RangeType can do this to opt-out of interpolation search
-						- one of the bounds is +/-infinity
-						Since first+1 < last, it will be naturally within bounds [first+1, last-1]
-					*/
-					else middle = (first+last) >> 1;
 				}
 				const mcompare = compare_start(this.ranges[middle]);
 				// inside (middle.start, last.start)

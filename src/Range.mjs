@@ -79,7 +79,8 @@
  *    `[0,5]`. Another case might be, `[-2,-0] [+0,3]` which can be merged as `[-2,3]`.
  * 2. To perform interpolation search in {@link RangeGroup#search}. You can opt-out of interpolation
  *    search by returning the sign of distance (-1, 0, or +1); this causes the search to reduce
- *    to binary search instead.
+ *    to binary search instead. See {@link CommonType.compareBinarySearch} for a decorator which
+ *    does this.
  * @prop {number} side One of the following:
  * - `-1`: `a` comes before `b`
  * - `0`: `a` equals `b` exactly; signed zero `-0` is also fine here

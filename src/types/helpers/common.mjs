@@ -88,16 +88,38 @@ function size(r){
  */
 function compareEpsilon(epsilon, type, subclass=true){
 	const compare = type.compare;
-	const wrapper = function(...args){
+	return wrap(type, subclass, function(...args){
 		const out = compare(...args)
 		if (Math.abs(out.distance) <= epsilon)
 			out.distance = 0;
 		return out;
-	};
+	});
+}
+
+/** Simple decorator that forces the {@link RangeType.compare} method to opt in to binary search,
+ * rather than interpolation search. It does this by forcing non-zero `distance` to have the same
+ * magnitude.
+ * @memberof CommonType
+ * @param {RangeType} type the type whose {@link RangeType.compare} method should be wrapped
+ * @param {boolean} [subclass=true] if true, a new {@link RangeType} is created that extends `type`;
+ *  if false, the {@link RangeType.compare} method of `type` is simply overwritten
+ * @returns {RangeType} depending on the value of `extend`, either `type` or a new type that
+ *  inherits from `type`
+ */
+function compareBinarySearch(type, subclass=true){
+	const compare = type.compare;
+	return wrap(type, subclass, function(...args){
+		const out = compare(...args)
+		out.distance = Math.sign(out.distance);
+		return out;
+	});	
+}
+
+function wrap(type, subclass, wrapper){
 	if (subclass)
 		type = Object.create(type);
 	type.compare = wrapper;
 	return type;
 }
 
-export { create, copy, setStart, setEnd, compareEpsilon , compare, size};
+export { create, copy, setStart, setEnd, compare, size, compareEpsilon, compareBinarySearch};

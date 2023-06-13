@@ -1,6 +1,8 @@
+// I'm using random testing, which I find is good at catching weird corner cases in diffing
+// algorithms; but that means these test cases will take a bit to run
 import {expect, jest} from '@jest/globals';
 import seed from "seed-random";
-import { IntType, ComparisonModes, RangeGroup } from "../src/barrel.mjs";
+import { IntType, ComparisonModes, RangeGroup, CommonType } from "../src/barrel.mjs";
 import Baseline from "./Baseline.mjs";
 const rand = seed("RangeGroupTests");
 
@@ -14,12 +16,11 @@ function rand_int(min, max){
 	return Math.floor(rand()*(max-min+1))+min;
 }
 
-function rand_args(){
-	const ranges = 5;
+function rand_args(ranges=5, max_val=100, max_size=6){
 	const args = [];
 	for (let r=0; r<ranges; r++){
-		const i = rand_int(0, 100);
-		const len = rand_int(-4, 6);
+		const i = rand_int(0, max_val);
+		const len = rand_int(-max_size+2, max_size);
 		const se = !rand_int(0,1);
 		const ee = !rand_int(0,1);
 		args.push([i, i+len, se, ee]);
@@ -76,6 +77,8 @@ test("iterate", () => {
 	const b = new Baseline(args);
 	expect(Array.from(r)).toEqual(Array.from(b));
 	expect(Array.from(r.iterate())).toEqual(Array.from(b.iterate()));
+	// reverse iterate
+	expect(Array.from(r.iterate(true))).toEqual(Array.from(b.iterate(true)));
 });
 
 test("args", () => {
@@ -88,6 +91,8 @@ test("args", () => {
 	for (let r of [r1,r2,r3,r4]){
 		expect(Array.from(r)).toEqual(b1);
 	}
+	let r5 = new RangeGroup(null, {type: IntType});
+	expect(r5.size()).toBe(0);
 	// bad argument type
 	expect(() => {
 		// won't fail immediately; we don't validate every arg
@@ -116,9 +121,8 @@ test("args", () => {
 */
 // Loop through and setup a random test case for diffing
 function* diffCombo(verbose=false){
-	const samples = 200;
 	for (let filter=1; filter<=7; filter++){
-		for (let s=0; s<samples; s++){
+		for (let s=0; s<10; s++){
 			if (verbose)
 				console.log(`filter ${filter} sample ${s}`);
 			const [Ra, Ba] = rand_args();
@@ -145,6 +149,16 @@ function* diffCombo(verbose=false){
 				Ba: new Baseline([]),
 				Bb: new Baseline([])
 			};
+		}
+		// large test
+		for (let s=0; s<5; s++){
+			if (verbose)
+				console.log(`filter ${filter} large test ${s}`);
+			let x = rand_args(1000, 15000);
+			let y = rand_args();
+			if (!rand_int(0,1))
+				[x,y] = [y,x];
+			yield {filter, sample:s, Ra:x[0], Ba:x[1], Rb:y[0], Bb:y[1]};
 		}
 	}
 }
@@ -343,13 +357,27 @@ test("diff cases", () => {
 			expect(r.b).toBe(i);
 		}
 	}
-
 	// adjacent merge
 	adjacent: {
 		const a = new RangeGroup([[0,5]], {type:IntType});
 		const b = new RangeGroup([[6,10]], {type:IntType});
 		const res = a.diff(b,{bool:true});
 		expect(res).toBe(true);
+	}
+	// on-the-fly conversion
+	fly: {
+		const a = new RangeGroup([0,5], {type:IntType});
+		expect(a.diff([6,10]).ranges).toEqual([{start:0,end:10}]);
+	}
+	// interpolation search reaches end of the other array
+	interpolation: {
+		let ranges = [];
+		for (let i=0; i<20; i++)
+			ranges.push([i*3,i*3]);
+		const a = new RangeGroup(ranges, {type:IntType});
+		const b = new RangeGroup([100,100], {type:IntType});
+		const res = a.diff(b, {filter:{ab:true}});
+		expect(res.isEmpty()).toBe(true);
 	}
 });
 
@@ -519,6 +547,13 @@ test("search/has cases", () => {
 	// empty
 	a.clear();
 	expect(a.search(0,{first:0,last:-1})).toEqual({index:0,has:false,start:null,end:null});
+	
+});
+test("binary search", () => {
+	const IntBinary = CommonType.compareBinarySearch(IntType);
+	const a = new RangeGroup([[5,10],[15,20],[25,30],[35,40]], {type:IntBinary});
+	expect(a.search(11)).toEqual({index:1,has:false,start:{distance:-1,side:-1},end:{distance:0,side:1}});
+	expect(a.search(12)).toEqual({index:1,has:false,start:{distance:-1,side:-1},end:{distance:1,side:1}});
 });
 test("size", () => {
 	const a = new RangeGroup([[5,10],[15,20],[25,30],[35,40]], {type:IntType});
