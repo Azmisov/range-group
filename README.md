@@ -4,9 +4,9 @@ A `RangeGroup` is a data structure that holds a collection of one-dimensional ra
 support for integers, reals/floats, dates, unicode characters, and unicode strings. You can also
 create your own `Range` type to integrate your own data types. It supports both inclusive (closed)
 and exclusive (open) range bounds.  It has a comprehensive API for operations, such as searching,
-set operations (union, difference, intersection), filtering, and more. It supports interpolation
-search for `O(log(log(N)))` membership tests and `O(N*log(log(M)))` set operations. It can also
-fallback to binary search for similar `log(N)` bounds.
+set operations (like union or intersection), filtering, and more. It supports interpolation search
+for `O(log(log(N)))` membership tests and `O(N*log(log(M)))` set operations. It can also fallback to
+binary search for similar `log(N)` bounds.
 
 Internally, it is storing a sorted, non-intersecting list of ranges. In many cases, it will
 give you better memory usage and more efficient set operations over the builtin `Set` type.
@@ -31,6 +31,8 @@ pull request to include another general purpose types you've made.
 
 ## Quickstart
 
+Take a look at the API for more comprehensive class and method documentation.
+
 ```js
 import { RangeGroup, ComparisonModes, IntType, RealType, ... } from "range-group";
 ```
@@ -46,9 +48,10 @@ group.subtract([3,6]);
 group.ranges; // [{start:0,end:3,endExcl:true}]
 ```
 
-Most of the methods on `RangeGroup` require the **group** to be normalized. This means the ranges
-are sorted and non-intersecting. The `sort` and `selfUnion` methods can do this, or the `normalize`
-method which calls these. You can also pass a `normalize` flag to the constructor:
+Most of the methods on `RangeGroup` require the **group** to be normalized (exceptions being things
+like `copy`, `filter`, `isEmpty`, etc). This means the ranges are sorted and non-intersecting. The
+`sort` and `selfUnion` methods can do this, or the `normalize` method which calls these. You can
+also pass a `normalize` flag to the constructor:
 
 ```js
 const group = new RangeGroup(
@@ -60,7 +63,7 @@ group.ranges; // [{start: 3, end: 16}]
 ```
 
 Note the first range was removed, since its end came before its start (`IntType` uses ascending
-order). Additionally, he last two ranges were merged as there are no integers between 10 and 11.
+order). Additionally, the last two ranges were merged as there are no integers between 10 and 11.
 These behaviors result from the implementation of `IntType.compare`.
 
 The `RangeGroup.diff` method is the most powerful, and most operations are implemented as calls to
@@ -122,7 +125,8 @@ create a new type, simply create an object with methods matching the `RangeType`
 methods provided in `CommonType` can provide a starting place, or you might wrap any of the other
 builtin types like `IntType`.
 
-`CommonType.compareEpsilon` can wrap a type to give a threshold to merge two ranges:
+Additionally there are helpers like `CommonType.compareEpsilon`. It can wrap a type and define a
+threshold to merge two ranges:
 
 ```js
 const EpsilonType = CommonType.compareEpsilon(0.25, RealType)
@@ -139,7 +143,7 @@ overhead, so can be a better choice in some scenarios.
 
 ## Method Reference
 
-### General:
+### General
 
 - `copy`
 - `sort`
@@ -148,12 +152,12 @@ overhead, so can be a better choice in some scenarios.
 ### Set iteration
 - `iterate`, `@@iterator`
 
-### Set membership:
+### Set membership
 
 - `contains` or `has`
 - `search`: provides extra context about the found location
 
-### Set modification:
+### Set modification
 
 - `diff`
 - `clear`, `toCleared`
@@ -176,7 +180,7 @@ Most the operations are implemented using the `diff` method. It supports numerou
 customizing in-place vs copy, boolean results, filtering, and labeling the source `RangeGroup`. You
 can use the `diff` calculate additional operations that have not been given aliases.
 
-### Set characteristics:
+### Set characteristics
 
 - `isEqual`: deep equality check
 - `isEmpty`, `cardinality` or `size`,

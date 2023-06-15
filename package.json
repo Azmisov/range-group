@@ -1,7 +1,16 @@
 {
   "name": "range-group",
   "version": "1.0.0",
-  "description": "Provides efficient set operations, where values are stored as contiguous ranges",
+  "description": "Data structure to hold a collection of ranges. It has builtin support for numbers, dates, and strings, fast O(log(log(N))) bounds, and provides comprehensive set operations.",
+  "keywords": [
+    "data structure",
+    "collection",
+    "range",
+    "interval",
+    "set",
+    "interpolation search",
+    "binary search"
+  ],
   "main": "./src/barrel.mjs",
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config=jest.config.js",

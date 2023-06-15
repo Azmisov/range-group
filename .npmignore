@@ -3,9 +3,11 @@
 .vscode/*
 tests/*
 docs/*
+benchmarks/*
 coverage/*
 rollup.config.mjs
 package-lock.json
 babel.config.json
 jest.config.js
 diff_algorithm.txt
+*.tgz
