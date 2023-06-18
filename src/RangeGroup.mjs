@@ -136,9 +136,9 @@ class RangeGroup{
 		/** Range type to use for this group
 		 * @type {RangeType}
 		 */
-		this.type = type === null ? RangeGroup.default_type : type;
+		this.type = type || RangeGroup.default_type;
 		// in case no default type was specified
-		if (!type)
+		if (!this.type)
 			throw Error("RangeGroup.default_type has not been set");
 		/** Internal list of ranges
 		 * @type {Range[]}
