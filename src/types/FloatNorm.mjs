@@ -57,7 +57,9 @@ function next_after(start, direction){
  * typical use cases.
  * 
  * Unlike {@link RealType}, an {@link RangeType.iterate} implementation is provided, which iterates
- * through every representable floating point number in the range.
+ * through every representable floating point number in the range. The {@link RangeType.sample}
+ * implementation bears the same caveat however, in that we cannot map `[0,1)` to any floating point
+ * range.
  * @implements {RangeType}
  */
 const FloatNormType = {
@@ -100,6 +102,9 @@ const FloatNormType = {
 				return;
 			s = next_after(s, e);
 		}
+	},
+	sample(range, i){
+		return i*size(range) + range.start;
 	}
 };
 

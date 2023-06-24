@@ -1,4 +1,6 @@
-import { DateFloorNormType, DateFloorType, DateFloorNormType as N } from "../src/barrel.mjs";
+import { DateFloorNormType, DateFloorType, DateFloorNormType as N,
+	RangeGroup, Sampler
+} from "../src/barrel.mjs";
 
 test("create", () => {
 	const base = new Date("2023-06-08T01:33:59.380Z");
@@ -97,4 +99,18 @@ test("iterate", () => {
 		res.reverse();
 		expect(Array.from(T.Minute.iterate(r, true))).toEqual(res);
 	}
-})
+});
+
+test("sample", () => {
+	for (const T of [DateFloorType, DateFloorNormType]){
+		let g = new RangeGroup([
+			[new Date("4:30 1/1"),new Date("4:30 1/4"),false,true],
+			[new Date("4:30 1/5"),new Date("4:30 1/8"),true]
+		], {type: T.Hour});
+		let s = new Sampler(g);
+		expect(s.sample(.5)).toEqual(new Date("5:00 1/5"));
+		expect(+s.sample(1) <= +new Date("5:00 1/8")).toBe(true);
+		expect(s.sample(0)).toEqual(new Date("4:00 1/1"));
+		expect(s.sample(.25)).toEqual(new Date("16:00 1/2"));
+	}
+});

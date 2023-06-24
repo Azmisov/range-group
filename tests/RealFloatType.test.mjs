@@ -1,4 +1,4 @@
-import { RealType, FloatNormType, CommonType } from "../src/barrel.mjs";
+import { Sampler, RangeGroup, RealType, FloatNormType, CommonType } from "../src/barrel.mjs";
 
 test("real compare", () => {
 	// number line is continuous/infinite, so exclusion doesn't change distance
@@ -165,4 +165,18 @@ test("compare epsilon", () => {
 	expect(EpsilonType.compare(0, exact, accum)).toEqual({distance:0,side:1});
 	// verify other methods on EpsilonType also work
 	expect(EpsilonType.size({start:-10.1,end:10.1})).toBe(20.2);
+});
+
+test("sample", () => {
+	for (const t of [RealType, FloatNormType]){
+		let g = new RangeGroup([
+			{start:0,end:3,endExcl:true},
+			{start:4,end:7,startExcl:true}
+		], {type: t});
+		let s = new Sampler(g);
+		expect(s.sample(.5)).toBe(4);
+		expect(s.sample(1)).toBeLessThan(7);
+		expect(s.sample(0)).toBe(0);
+		expect(s.sample(.25)).toBe(1.5);
+	}
 });

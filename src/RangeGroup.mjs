@@ -121,6 +121,11 @@ class RangeGroup{
 	 * this should be an array containing ranges for the group; each range can be a preconstructed
 	 * {@link Range} or an array of arguments to construct one. Any {@link Range} will be reused,
 	 * while the containing array is copied.
+	 * 
+	 * **Caution:** Since a {@link Range} will be reused, auto-normalizing types like
+	 * {@link IntNormType} are going to assume the ranges are already normalized to be inclusive.
+	 * You can pass arguments to construct a new {@link Range} to construct an auto-normalized range
+	 * instead.
 	 *	
 	 * For convenience, you can also pass just a single preconstructed range. You can pass a single
  	 * array of arguments to construct a range as well, but only if the first argument is not an

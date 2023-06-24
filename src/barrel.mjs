@@ -1,4 +1,5 @@
 export * from "./RangeGroup.mjs";
+export { default as Sampler } from "./Sampler.mjs";
 // builtin types
 export * as CommonType from "./types/helpers/common.mjs";
 export * as StringRange from "./types/helpers/string_range.mjs";

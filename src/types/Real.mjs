@@ -8,6 +8,15 @@ import {create, copy, compare, size, setStart, setEnd} from "./helpers/common.mj
  * 
  * No {@link RangeType.iterate} implementation is provided, as it represents a continuous type.
  * 
+ * The builtin {@link RangeType.sample} method is not perfect. Firstly, we cannot map `[0,1)` to any
+ * floating point range, e.g. we can only sample half of the values in `[-1,1]`. Exclusion is only
+ * handled properly when the end, and only end, is exclusive. This matches the exclusion of the
+ * input `[0,1)`. If the end is inclusive, it won't ever get sampled. If the start is exclusive, it
+ * could get falsely sampled. For accurate handling of exclusion, you can consider using the
+ * {@link FloatNormType} instead. Another alternative would be to write your own sampler which
+ * resamples if the value is exclusive (e.g. perhaps returning null and looping elsewhere until
+ * non-null).
+ * 
  * Inputs for this type are [coerced to
  * numbers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number#number_coercion)
  * prior to calculations.
@@ -36,6 +45,9 @@ const RealType = {
 		}
 		return out;
 	},
+	sample(range, i){
+		return +range.start + i*size(range);
+	}
 };
 
 export default RealType;

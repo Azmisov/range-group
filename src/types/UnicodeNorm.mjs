@@ -13,6 +13,14 @@ const UnicodeNormType = {
 	base_type: IntNormType,
 	create,
 	copy,
+	toBaseTypeRange(range){
+		return {
+			start: lastCodepoint(range.start),
+			end: lastCodepoint(range.end),
+			startExcl: range.startExcl,
+			endExcl: range.endExcl
+		};
+	},
 	setStart(range, start, startExcl){
 		const last = lastCodepoint(start);
 		const prefix = start.slice(0, -utf16Length(last));
@@ -29,12 +37,14 @@ const UnicodeNormType = {
 	},
 	size(range){
 		// delegate to base_type
-		return this.base_type.size({
-			start: lastCodepoint(range.start),
-			end: lastCodepoint(range.end),
-			startExcl: range.startExcl,
-			endExcl: range.endExcl
-		});
+		return this.base_type.size(this.toBaseTypeRange(range));
+	},
+	sample(range, i){
+		const base = this.toBaseTypeRange(range);
+		const base_len = utf16Length(base.start);
+		const prefix = range.start.slice(0, -base_len);
+		const s = this.base_type.sample(base, i);
+		return prefix + String.fromCodePoint(s);
 	},
 	compare(mode, a, b, aExcl, bExcl){
 		/* Can't sensibly measure distance for different string lengths or when there are

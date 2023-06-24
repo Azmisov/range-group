@@ -59,7 +59,7 @@ function setEnd(range, end, endExcl){
  */
 function compare(mode, a, b){
 	// prefixed + to do explicit cast to number
-	const distance = +a-b;
+	const distance = +a - +b;
 	const side = Math.sign(distance);
 	return {distance, side};
 }
@@ -70,7 +70,7 @@ function compare(mode, a, b){
  * @memberof CommonType
  */
 function size(r){
-	return +r.end-r.start;
+	return +r.end - +r.start;
 }
 
 /** Simple decorator that adds fuzzy comparison to an existing {@link RangeType}. This causes ranges

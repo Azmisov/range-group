@@ -42,6 +42,9 @@ const abstract_type = {
 		const gen = this.base_type.iterate(this.toBaseTypeRange(range), ...args);
 		for (const val of gen)
 			yield new Date(val*this.unit);
+	},
+	sample(range, i){
+		return new Date(this.base_type.sample(this.toBaseTypeRange(range), i)*this.unit);
 	}
 };
 

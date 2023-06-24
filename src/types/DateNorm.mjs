@@ -34,6 +34,9 @@ const DateNormType = {
 	*iterate(...args){
 		for (const ms of this.base_type.iterate(...args))
 			yield new Date(ms);
+	},
+	sample(...args){
+		return new Date(this.base_type.sample(...args));
 	}
 };
 

@@ -107,10 +107,11 @@
  * @param {?boolean} bExcl Whether `b` is an exclusive bound
  * @returns {RangeType~CompareResult}
  */
-/** Iterate values inside the range. This is called by {@link RangeGroup#iterate}
+/** Iterate values inside the range. This is called by {@link RangeGroup#iterate}, and should be
+ * implemented if the type wishes to support that method.
  * @function
  * @name RangeType.iterate
- * @param {?boolean} reverse Whether values should be iterated forward or backward. The order of is
+ * @param {?boolean} reverse Whether values should be iterated forward or backward. The ordering is
  *  up to the {@link RangeType}, but in general *forward* should correspond to *ascending* order.
  * @param {...any} args Arbitrary arguments used to customize the iteration. These are forwarded
  * 	from {@link RangeGroup#iterate}
@@ -136,4 +137,11 @@
  * @param {any} end the new ending bound
  * @param {?boolean} endExcl whether the end is exclusive 
  * @returns {Range} the modified range
+ */
+/** Draw a sample from a {@link Range}. This is used by {@link Sampler}
+ * @function
+ * @name RangeType.sample
+ * @param {Range} range the range to sample from
+ * @param {number} i a float between [0,1) indicating what sample to return
+ * @returns {Range} a sample drawn from `range`
  */

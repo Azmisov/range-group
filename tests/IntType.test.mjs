@@ -1,5 +1,4 @@
-import IntType from "../src/types/Int.mjs";
-import { ComparisonModes } from "../src/RangeGroup.mjs";
+import { IntType, ComparisonModes, RangeGroup, Sampler } from "../src/barrel.mjs";
 
 test("IntType iterate", () => {
 	for (let i=0; i<=3; i++){
@@ -33,4 +32,16 @@ test("IntType size", () => {
 	expect(IntType.size({start:4,end:6})).toBe(3);
 	expect(IntType.size({start:4,end:6,startExcl:true,endExcl:true})).toBe(1);
 	expect(IntType.size({start:-6,end:-4,startExcl:false,endExcl:true})).toBe(2);
+});
+test("sample", () => {
+	let g = new RangeGroup([
+		{start:0,end:3,endExcl:true},
+		{start:4,end:7,startExcl:true}
+	], {type:IntType});
+	// 0, 1, 2, 5, 6, 7
+	let s = new Sampler(g);
+	expect(s.sample(.5)).toBe(5);
+	expect(s.sample(1)).toBe(7);
+	expect(s.sample(0)).toBe(0);
+	expect(s.sample(.25)).toBe(1);
 });

@@ -1,6 +1,7 @@
 import {
 	UnicodeType as UT,
-	UnicodeNormType as UNT
+	UnicodeNormType as UNT,
+	Sampler, RangeGroup
 } from "../src/barrel.mjs";
 
 test("validate", () => {
@@ -34,4 +35,18 @@ test("create, setStart, setEnd", () => {
 test("size", () => {
 	expect(UT.size({start:"A", end:"B", startExcl:false, endExcl:true})).toBe(1);
 	expect(UT.size({start:"😂xA", end:"😂x😃", startExcl:false, endExcl:true})).toBe(0x1f603-0x41);
+});
+test("sample", () => {
+	for (const type of [UT, UNT]){
+		let g = new RangeGroup([
+			["yx😀","yx😃",false,true],
+		], {type:type});
+		// 0, 1, 2, 5, 6, 7
+		let s = new Sampler(g);
+		const v = s.sample(.5);
+		// console.log(0x1f600, "😀".codePointAt(0), 0x1f603, "😃".codePointAt(0))
+		// console.log("😁".codePointAt(0))
+		// console.log(v.codePointAt(2));
+		expect(v).toEqual("yx😁");
+	}
 });

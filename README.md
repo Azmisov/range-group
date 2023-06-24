@@ -4,9 +4,9 @@ A `RangeGroup` is a data structure that holds a collection of one-dimensional ra
 support for integers, reals/floats, dates, unicode characters, and unicode strings. You can also
 create your own `Range` type to integrate your own data types. It supports both inclusive (closed)
 and exclusive (open) range bounds.  It has a comprehensive API for operations, such as searching,
-set operations (like union or intersection), filtering, and more. It supports interpolation search
-for `O(log(log(N)))` membership tests and `O(N*log(log(M)))` set operations. It can also fallback to
-binary search for similar `log(N)` bounds.
+set operations (like union or intersection), filtering, random sampling, and more. It supports
+interpolation search for `O(log(log(N)))` membership tests and `O(N*log(log(M)))` set operations. It
+can also fallback to binary search for similar `log(N)` bounds.
 
 Internally, it is storing a sorted, non-intersecting list of ranges. In many cases, it will
 give you better memory usage and more efficient set operations over the builtin `Set` type.
@@ -90,6 +90,20 @@ automatically. If later you want to perform additional diff operations, you'll n
 normalized form by calling `selfUnion` (or `normalize`, though it will perform an extra unnecessary
 sort).
 
+A `Sampler` class has been added which can randomly sample from a `RangeGroup`. For this to be efficient, it caches a cumulative summation on creation for use with binary search. If you want to update
+the `RangeGroup`, you'll need to create another `Sampler`:
+
+```js
+const group = new RangeGroup([[0,5],[10,15]], {type:IntType});
+const sampler = new Sampler(group);
+// uniform sample
+sampler.sample();
+// non-uniform sample
+sampler.sample(my_distribution()); 
+// percentile function
+sampler.sample(.2); 
+```
+
 ## Builtin Types
 
 A `RangeGroup` needs to be passed a `RangeType` object, which acts as interface between your `Range`
@@ -117,6 +131,10 @@ There is no normalization for `RealType`, since there is no "next real number" y
 You can use the `FloatNormType` however, albeit with negative performance impact, to normalize to
 the next representable floating point number.
 
+**Caution:** The Norm types should not be passed pre-constructed ranges when constructing a
+RangeGroup. For optimization, it is assumed preconstructed ranges are already normalized. Pass
+arguments instead if you wish to have them normalized on creation (see API for options).
+
 ## Custom Types
 
 A design choice for the library was to decouple the `Range` and `RangeType` interfaces. This allows
@@ -142,6 +160,8 @@ of interpolation search. Binary search has better worst case time complexity, an
 overhead, so can be a better choice in some scenarios.
 
 ## Method Reference
+
+The following methods are available on a `RangeGroup`:
 
 ### General
 

@@ -1,4 +1,4 @@
-import { DateType, DateNormType, DateFloorNormType } from "../src/barrel.mjs";
+import { DateType, DateNormType, DateFloorNormType, RangeGroup, Sampler } from "../src/barrel.mjs";
 
 test("date create", () => {
 	// should copy date, but keep it a date object
@@ -51,4 +51,18 @@ test("date iterate", () => {
 	for (let i=0; i<10; i++)
 		arr2.push(new Date(+b-i));
 	expect(arr).toEqual(arr2);
+});
+
+test("sample", () => {
+	for (const t of [DateType, DateNormType]){
+		let g = new RangeGroup([
+			[new Date("4:30 1/1"),new Date("4:30 1/4"),false,true],
+			[new Date("4:30 1/5"),new Date("4:30 1/8"),true]
+		], {type: t});
+		let s = new Sampler(g);
+		expect(s.sample(.5)).toEqual(new Date("4:30:00.001 1/5"));
+		expect(+s.sample(1) <= +new Date("4:30 1/8")).toBe(true);
+		expect(s.sample(0)).toEqual(new Date("4:30 1/1"));
+		expect(s.sample(.25)).toEqual(new Date("16:30 1/2"));
+	}
 });

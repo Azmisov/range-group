@@ -20,6 +20,10 @@ const IntNormType = {
 	copy,
 	compare,
 	size,
+	sample(r, i){
+		// floor in inner portion for numerical stability
+		return +r.start + Math.floor(size(r)*i);
+	},
 	setStart(range, start, startExcl){
 		range.start = +start + (startExcl^0);
 		return range;
@@ -30,11 +34,11 @@ const IntNormType = {
 	},
 	*iterate(r, reverse){
 		if (reverse){
-			for (let i = r.end; i >= r.start; i--)
+			for (let i = +r.end; i >= +r.start; i--)
 				yield i;
 		}
 		else{
-			for (let i = r.start; i <= r.end; i++)
+			for (let i = +r.start; i <= +r.end; i++)
 				yield i;
 		}
 	}
